@@ -227,10 +227,56 @@ The `createPaymentRequirements` method expects an x402 `RouteConfig` object:
     resource: string;         // API endpoint URL
     mimeType?: string;        // Optional, defaults to 'application/json'
     maxTimeoutSeconds?: number; // Optional, defaults to 300
+    discoverable?: boolean;   // Optional, makes endpoint discoverable in x402 Bazaar, x402scan etc
+    inputSchema?: object;     // Optional input schema for API documentation
     outputSchema?: object;    // Optional response schema
   }
 }
 ```
+
+## x402 Ecosystem Discoverability
+
+To make your API discoverable in x402 ecosystem services (like [x402 Bazaar](https://docs.cdp.coinbase.com/x402/bazaar), x402scan, and other discovery platforms), set `discoverable: true` in your route config:
+
+```typescript
+const paymentRequirements = await x402.createPaymentRequirements({
+  price: {
+    amount: "1000000",  // $1.00 USDC
+    asset: {
+      address: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+    }
+  },
+  network: 'solana-devnet',
+  config: {
+    discoverable: true,  // Enable discovery in x402 ecosystem
+    description: 'Get current weather data for any location',
+    resource: `${process.env.BASE_URL}/api/weather`,
+    inputSchema: {
+      queryParams: {
+        location: {
+          type: 'string',
+          description: 'City name or coordinates',
+          required: true
+        }
+      }
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        temperature: { type: 'number' },
+        conditions: { type: 'string' },
+        humidity: { type: 'number' }
+      }
+    }
+  }
+});
+```
+
+**Benefits of making your API discoverable:**
+- Automatic listing in x402 discovery services
+- AI agents can find and use your API autonomously
+- Better developer discoverability across the ecosystem
+- Include `inputSchema` and `outputSchema` for clear API documentation
 
 ## Configuration
 
