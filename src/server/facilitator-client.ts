@@ -91,12 +91,13 @@ export class FacilitatorClient {
 
   /**
    * Settle payment with facilitator
+   * @returns SettleResponse with success status and optional error from facilitator
    */
   async settlePayment(
     paymentHeader: string,
     paymentRequirements: PaymentRequirements,
     x402Version: number
-  ): Promise<boolean> {
+  ): Promise<SettleResponse> {
     try {
       // Decode the base64 payment payload
       const paymentPayload = JSON.parse(
@@ -118,15 +119,25 @@ export class FacilitatorClient {
       });
 
       if (!response.ok) {
-        return false;
+        const errorBody = await response.text();
+        console.error(`Facilitator /settle returned ${response.status}:`, errorBody);
+        return {
+          success: false,
+          error: "Settlement failed",
+        };
       }
 
+      // Facilitator returns SettleResponse with status 200 even when settlement fails
       const facilitatorResponse: SettleResponse = await response.json();
-      return facilitatorResponse.success === true;
+      return facilitatorResponse;
     } catch (error) {
       console.error("Payment settlement failed:", error);
-      return false;
+      return {
+        success: false,
+        error: "Settlement failed",
+      };
     }
   }
+}
 }
 
