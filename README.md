@@ -227,7 +227,7 @@ The `createPaymentRequirements` method expects an x402 `RouteConfig` object:
     resource: string;         // API endpoint URL
     mimeType?: string;        // Optional, defaults to 'application/json'
     maxTimeoutSeconds?: number; // Optional, defaults to 300
-    discoverable?: boolean;   // Optional, makes endpoint discoverable in x402 Bazaar
+    discoverable?: boolean;   // Optional, makes endpoint discoverable in x402 Bazaar, x402scan etc
     inputSchema?: object;     // Optional input schema for API documentation
     outputSchema?: object;    // Optional response schema
   }
