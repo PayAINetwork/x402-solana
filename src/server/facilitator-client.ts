@@ -55,7 +55,6 @@ export class FacilitatorClient {
       );
 
       const verifyPayload = {
-        x402Version,
         paymentPayload,
         paymentRequirements,
       };
@@ -105,7 +104,6 @@ export class FacilitatorClient {
       );
 
       const settlePayload = {
-        x402Version,
         paymentPayload,
         paymentRequirements,
       };
