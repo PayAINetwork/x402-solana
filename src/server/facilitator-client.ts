@@ -45,8 +45,7 @@ export class FacilitatorClient {
    */
   async verifyPayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements,
-    x402Version: number
+    paymentRequirements: PaymentRequirements
   ): Promise<VerifyResponse> {
     try {
       // Decode the base64 payment payload
@@ -90,12 +89,11 @@ export class FacilitatorClient {
 
   /**
    * Settle payment with facilitator
-   * @returns SettleResponse with success status and optional error from facilitator
+   * @returns SettleResponse with success status and optional errorReason from facilitator
    */
   async settlePayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements,
-    x402Version: number
+    paymentRequirements: PaymentRequirements
   ): Promise<SettleResponse> {
     try {
       // Decode the base64 payment payload
@@ -121,7 +119,9 @@ export class FacilitatorClient {
         console.error(`Facilitator /settle returned ${response.status}:`, errorBody);
         return {
           success: false,
-          error: "Settlement failed",
+          errorReason: "unexpected_settle_error",
+          transaction: "",
+          network: paymentRequirements.network,
         };
       }
 
@@ -132,10 +132,11 @@ export class FacilitatorClient {
       console.error("Payment settlement failed:", error);
       return {
         success: false,
-        error: "Settlement failed",
+        errorReason: "unexpected_settle_error",
+        transaction: "",
+        network: paymentRequirements.network,
       };
     }
   }
-}
 }
 

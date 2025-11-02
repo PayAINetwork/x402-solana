@@ -123,18 +123,18 @@ export class X402PaymentHandler {
     paymentHeader: string,
     paymentRequirements: PaymentRequirements
   ): Promise<VerifyResponse> {
-    return this.facilitatorClient.verifyPayment(paymentHeader, paymentRequirements, 1);
+    return this.facilitatorClient.verifyPayment(paymentHeader, paymentRequirements);
   }
 
   /**
    * Settle payment with facilitator
-   * @returns SettleResponse with success status and optional error
+   * @returns SettleResponse with success status and optional errorReason
    */
   async settlePayment(
     paymentHeader: string,
     paymentRequirements: PaymentRequirements
   ): Promise<SettleResponse> {
-    return this.facilitatorClient.settlePayment(paymentHeader, paymentRequirements, 1);
+    return this.facilitatorClient.settlePayment(paymentHeader, paymentRequirements);
   }
 }
 
