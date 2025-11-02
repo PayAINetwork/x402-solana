@@ -72,7 +72,7 @@ export class X402PaymentHandler {
       throw new Error("resource is required: provide either as parameter or in RouteConfig.config.resource");
     }
 
-    // Always include outputSchema field (required for x402scan registration)
+    // Always include outputSchema field (required for facilitator discovery)
     const paymentRequirements: PaymentRequirements = {
       scheme: "exact",
       network: routeConfig.network as typeof this.config.network,
