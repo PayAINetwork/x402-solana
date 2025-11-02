@@ -41,12 +41,13 @@ export class FacilitatorClient {
 
   /**
    * Verify payment with facilitator
+   * @returns VerifyResponse with isValid and optional invalidReason from facilitator
    */
   async verifyPayment(
     paymentHeader: string,
     paymentRequirements: PaymentRequirements,
     x402Version: number
-  ): Promise<boolean> {
+  ): Promise<VerifyResponse> {
     try {
       // Decode the base64 payment payload
       const paymentPayload = JSON.parse(
@@ -68,14 +69,23 @@ export class FacilitatorClient {
       });
 
       if (!response.ok) {
-        return false;
+        const errorBody = await response.text();
+        console.error(`Facilitator /verify returned ${response.status}:`, errorBody);
+        return {
+          isValid: false,
+          invalidReason: "unexpected_verify_error",
+        };
       }
 
+      // Facilitator returns VerifyResponse with status 200 even when validation fails
       const facilitatorResponse: VerifyResponse = await response.json();
-      return facilitatorResponse.isValid === true;
+      return facilitatorResponse;
     } catch (error) {
       console.error("Payment verification failed:", error);
-      return false;
+      return {
+        isValid: false,
+        invalidReason: "unexpected_verify_error",
+      };
     }
   }
 
