@@ -1,4 +1,4 @@
-import { X402ServerConfig, PaymentRequirements, RouteConfig, SPLTokenAmount } from "../types";
+import { X402ServerConfig, PaymentRequirements, RouteConfig, SPLTokenAmount, VerifyResponse, SettleResponse } from "../types";
 import { getDefaultRpcUrl, getDefaultTokenAsset } from "../utils";
 import { FacilitatorClient } from "./facilitator-client";
 
@@ -117,22 +117,24 @@ export class X402PaymentHandler {
 
   /**
    * Verify payment with facilitator
+   * @returns VerifyResponse with isValid and optional invalidReason
    */
   async verifyPayment(
     paymentHeader: string,
     paymentRequirements: PaymentRequirements
-  ): Promise<boolean> {
-    return this.facilitatorClient.verifyPayment(paymentHeader, paymentRequirements, 1);
+  ): Promise<VerifyResponse> {
+    return this.facilitatorClient.verifyPayment(paymentHeader, paymentRequirements);
   }
 
   /**
    * Settle payment with facilitator
+   * @returns SettleResponse with success status and optional errorReason
    */
   async settlePayment(
     paymentHeader: string,
     paymentRequirements: PaymentRequirements
-  ): Promise<boolean> {
-    return this.facilitatorClient.settlePayment(paymentHeader, paymentRequirements, 1);
+  ): Promise<SettleResponse> {
+    return this.facilitatorClient.settlePayment(paymentHeader, paymentRequirements);
   }
 }
 

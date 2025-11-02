@@ -41,12 +41,12 @@ export class FacilitatorClient {
 
   /**
    * Verify payment with facilitator
+   * @returns VerifyResponse with isValid and optional invalidReason from facilitator
    */
   async verifyPayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements,
-    x402Version: number
-  ): Promise<boolean> {
+    paymentRequirements: PaymentRequirements
+  ): Promise<VerifyResponse> {
     try {
       // Decode the base64 payment payload
       const paymentPayload = JSON.parse(
@@ -54,7 +54,6 @@ export class FacilitatorClient {
       );
 
       const verifyPayload = {
-        x402Version,
         paymentPayload,
         paymentRequirements,
       };
@@ -68,25 +67,34 @@ export class FacilitatorClient {
       });
 
       if (!response.ok) {
-        return false;
+        const errorBody = await response.text();
+        console.error(`Facilitator /verify returned ${response.status}:`, errorBody);
+        return {
+          isValid: false,
+          invalidReason: "unexpected_verify_error",
+        };
       }
 
+      // Facilitator returns VerifyResponse with status 200 even when validation fails
       const facilitatorResponse: VerifyResponse = await response.json();
-      return facilitatorResponse.isValid === true;
+      return facilitatorResponse;
     } catch (error) {
       console.error("Payment verification failed:", error);
-      return false;
+      return {
+        isValid: false,
+        invalidReason: "unexpected_verify_error",
+      };
     }
   }
 
   /**
    * Settle payment with facilitator
+   * @returns SettleResponse with success status and optional errorReason from facilitator
    */
   async settlePayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements,
-    x402Version: number
-  ): Promise<boolean> {
+    paymentRequirements: PaymentRequirements
+  ): Promise<SettleResponse> {
     try {
       // Decode the base64 payment payload
       const paymentPayload = JSON.parse(
@@ -94,7 +102,6 @@ export class FacilitatorClient {
       );
 
       const settlePayload = {
-        x402Version,
         paymentPayload,
         paymentRequirements,
       };
@@ -108,14 +115,27 @@ export class FacilitatorClient {
       });
 
       if (!response.ok) {
-        return false;
+        const errorBody = await response.text();
+        console.error(`Facilitator /settle returned ${response.status}:`, errorBody);
+        return {
+          success: false,
+          errorReason: "unexpected_settle_error",
+          transaction: "",
+          network: paymentRequirements.network,
+        };
       }
 
+      // Facilitator returns SettleResponse with status 200 even when settlement fails
       const facilitatorResponse: SettleResponse = await response.json();
-      return facilitatorResponse.success === true;
+      return facilitatorResponse;
     } catch (error) {
       console.error("Payment settlement failed:", error);
-      return false;
+      return {
+        success: false,
+        errorReason: "unexpected_settle_error",
+        transaction: "",
+        network: paymentRequirements.network,
+      };
     }
   }
 }
