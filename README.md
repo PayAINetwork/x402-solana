@@ -33,6 +33,109 @@ yarn add x402-solana
 
 ### Client Side (React/Frontend)
 
+The x402-solana client works with any wallet provider that implements the `WalletAdapter` interface. Below are examples using both Solana Wallet Adapter and Privy.
+
+#### Option 1: Using Solana Wallet Adapter (Recommended)
+
+First, install the required packages:
+
+```bash
+npm install @solana/wallet-adapter-react @solana/wallet-adapter-react-ui @solana/wallet-adapter-wallets @solana/wallet-adapter-base
+```
+
+Setup your wallet provider in your app root (e.g., `_app.tsx` or `layout.tsx`):
+
+```typescript
+import { useMemo } from 'react';
+import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
+import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
+import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
+import { 
+  PhantomWalletAdapter,
+  SolflareWalletAdapter,
+  BackpackWalletAdapter,
+} from '@solana/wallet-adapter-wallets';
+
+// Import styles
+import '@solana/wallet-adapter-react-ui/styles.css';
+
+export default function App({ Component, pageProps }) {
+  const network = WalletAdapterNetwork.Devnet; // or Mainnet
+  const endpoint = useMemo(() => 'https://api.devnet.solana.com', []);
+  
+  const wallets = useMemo(
+    () => [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter(),
+      new BackpackWalletAdapter(),
+    ],
+    []
+  );
+
+  return (
+    <ConnectionProvider endpoint={endpoint}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>
+          <Component {...pageProps} />
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
+  );
+}
+```
+
+Use in your component:
+
+```typescript
+import { createX402Client } from 'x402-solana/client';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+
+function MyComponent() {
+  const wallet = useWallet();
+
+  const handlePaidRequest = async () => {
+    if (!wallet.connected || !wallet.publicKey) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    // Create x402 client
+    const client = createX402Client({
+      wallet: {
+        address: wallet.publicKey.toString(),
+        signTransaction: async (tx) => {
+          if (!wallet.signTransaction) throw new Error('Wallet does not support signing');
+          return await wallet.signTransaction(tx);
+        },
+      },
+      network: 'solana-devnet',
+      maxPaymentAmount: BigInt(10_000_000), // Optional: max 10 USDC
+    });
+
+    // Make a paid request - automatically handles 402 payments
+    const response = await client.fetch('/api/paid-endpoint', {
+      method: 'POST',
+      body: JSON.stringify({ data: 'your request' }),
+    });
+
+    const result = await response.json();
+    console.log('Result:', result);
+  };
+
+  return (
+    <div>
+      <WalletMultiButton />
+      <button onClick={handlePaidRequest} disabled={!wallet.connected}>
+        Make Paid Request
+      </button>
+    </div>
+  );
+}
+```
+
+#### Option 2: Using Privy
+
 ```typescript
 import { createX402Client } from 'x402-solana/client';
 import { useSolanaWallets } from '@privy-io/react-auth/solana';
@@ -337,12 +440,66 @@ interface WalletAdapter {
 }
 ```
 
-This works with:
+#### Compatible Wallet Providers
 
-- Privy wallets (`useSolanaWallets()`)
-- Phantom SDK
-- Solflare SDK
-- Any wallet with `signTransaction` method
+**Solana Wallet Adapter (@solana/wallet-adapter-react)**
+
+The official Solana wallet adapter provides the most flexibility and supports multiple wallets:
+
+```typescript
+import { useWallet } from '@solana/wallet-adapter-react';
+
+const wallet = useWallet();
+const walletAdapter = {
+  address: wallet.publicKey?.toString() || '',
+  signTransaction: wallet.signTransaction,
+};
+```
+
+**Privy (@privy-io/react-auth)**
+
+Privy wallets work out of the box:
+
+```typescript
+import { useSolanaWallets } from '@privy-io/react-auth/solana';
+
+const { wallets } = useSolanaWallets();
+const wallet = wallets[0]; // Already implements the interface
+```
+
+**Direct Wallet SDKs**
+
+You can also use wallet SDKs directly:
+
+```typescript
+// Phantom
+const phantomProvider = window.phantom?.solana;
+const walletAdapter = {
+  address: phantomProvider.publicKey.toString(),
+  signTransaction: (tx) => phantomProvider.signTransaction(tx),
+};
+
+// Solflare
+const solflareProvider = window.solflare;
+const walletAdapter = {
+  address: solflareProvider.publicKey.toString(),
+  signTransaction: (tx) => solflareProvider.signTransaction(tx),
+};
+```
+
+**Custom Wallet Implementations**
+
+Any custom wallet implementation that can sign transactions works:
+
+```typescript
+const customWallet = {
+  address: 'your_public_key_string',
+  signTransaction: async (tx: VersionedTransaction) => {
+    // Your custom signing logic
+    return signedTransaction;
+  },
+};
+```
 
 ## Payment Amounts
 
