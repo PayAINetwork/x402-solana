@@ -5,7 +5,6 @@ import {
   VersionedTransaction,
   ComputeBudgetProgram,
   TransactionInstruction,
-  SystemProgram,
 } from "@solana/web3.js";
 import {
   getAssociatedTokenAddress,
@@ -52,7 +51,7 @@ export async function createSolanaPaymentHeader(
   // The facilitator REQUIRES ComputeBudget instructions in positions 0 and 1
   instructions.push(
     ComputeBudgetProgram.setComputeUnitLimit({
-      units: 40_000, // Sufficient for SPL token transfer + ATA creation
+      units: 40_000, // Sufficient for SPL token transfer
     })
   );
 
@@ -100,27 +99,12 @@ export async function createSolanaPaymentHeader(
     );
   }
 
-  // Create ATA for destination if missing (payer = facilitator)
+  // Check if destination ATA exists (receiver must already have token account)
   const destAtaInfo = await connection.getAccountInfo(destinationAta, "confirmed");
   if (!destAtaInfo) {
-    const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(
-      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+    throw new Error(
+      `Destination does not have an Associated Token Account for ${paymentRequirements.asset}. The receiver must create their token account before receiving payments.`
     );
-
-    const createAtaInstruction = new TransactionInstruction({
-      keys: [
-        { pubkey: feePayerPubkey, isSigner: true, isWritable: true },
-        { pubkey: destinationAta, isSigner: false, isWritable: true },
-        { pubkey: destination, isSigner: false, isWritable: false },
-        { pubkey: mintPubkey, isSigner: false, isWritable: false },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-        { pubkey: programId, isSigner: false, isWritable: false },
-      ],
-      programId: ASSOCIATED_TOKEN_PROGRAM_ID,
-      data: Buffer.from([0]), // CreateATA discriminator
-    });
-
-    instructions.push(createAtaInstruction);
   }
 
   // TransferChecked instruction
