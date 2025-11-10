@@ -51,7 +51,7 @@ export async function createSolanaPaymentHeader(
   // The facilitator REQUIRES ComputeBudget instructions in positions 0 and 1
   instructions.push(
     ComputeBudgetProgram.setComputeUnitLimit({
-      units: 40_000, // Sufficient for SPL token transfer
+      units: 7_000, // Sufficient for SPL token transfer
     })
   );
 
