@@ -13,8 +13,12 @@ export class X402Client {
   constructor(config: X402ClientConfig) {
     const rpcUrl = config.rpcUrl || getDefaultRpcUrl(config.network);
 
+    // Use custom fetch if provided, otherwise use native fetch
+    // globalThis.fetch works in both browser and Node.js (18+)
+    const fetchFn = config.customFetch || globalThis.fetch.bind(globalThis);
+
     this.paymentFetch = createPaymentFetch(
-      fetch.bind(window),
+      fetchFn,
       config.wallet,
       rpcUrl,
       config.maxPaymentAmount || BigInt(0)
@@ -22,7 +26,8 @@ export class X402Client {
   }
 
   /**
-   * Make a fetch request with automatic x402 payment handling
+   * Make a fetch request with automatic x402 payment handling.
+   * If a customFetch was provided in the config, it will be used for all requests.
    */
   async fetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
     return this.paymentFetch(input, init);
