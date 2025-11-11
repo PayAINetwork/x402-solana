@@ -161,6 +161,94 @@ function MyComponent() {
 }
 ```
 
+#### Using with a Proxy Server (CORS Bypass)
+
+If you're making requests from a browser to external APIs and encountering CORS issues, you can provide a custom fetch function that routes requests through your proxy server:
+
+```typescript
+import { createX402Client } from 'x402-solana/client';
+import { useWallet } from '@solana/wallet-adapter-react';
+
+function MyComponent() {
+  const wallet = useWallet();
+
+  // Create a custom fetch function that uses your proxy
+  const createProxyFetch = () => {
+    const proxyUrl = process.env.NEXT_PUBLIC_PROXY_URL || 'http://localhost:3001/api/proxy';
+
+    return async (url: string | RequestInfo, init?: RequestInit): Promise<Response> => {
+      // Send request through proxy server
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: typeof url === 'string' ? url : url.toString(),
+          method: init?.method || 'GET',
+          headers: init?.headers || {},
+          body: init?.body
+        })
+      });
+
+      const proxyData = await response.json();
+
+      // Reconstruct Response object with original status
+      return new Response(
+        typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data),
+        {
+          status: proxyData.status,
+          statusText: proxyData.statusText || '',
+          headers: new Headers(proxyData.headers || {})
+        }
+      );
+    };
+  };
+
+  const handlePaidRequest = async () => {
+    if (!wallet.connected || !wallet.publicKey) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    // Create x402 client with custom fetch
+    const client = createX402Client({
+      wallet: {
+        address: wallet.publicKey.toString(),
+        signTransaction: async (tx) => {
+          if (!wallet.signTransaction) throw new Error('Wallet does not support signing');
+          return await wallet.signTransaction(tx);
+        },
+      },
+      network: 'solana-devnet',
+      maxPaymentAmount: BigInt(10_000_000),
+      customFetch: createProxyFetch() // Use proxy for all requests
+    });
+
+    // All requests now go through your proxy server
+    const response = await client.fetch('https://external-api.com/endpoint', {
+      method: 'POST',
+      body: JSON.stringify({ data: 'your request' }),
+    });
+
+    const result = await response.json();
+    console.log('Result:', result);
+  };
+
+  return (
+    <button onClick={handlePaidRequest} disabled={!wallet.connected}>
+      Make Paid Request (via Proxy)
+    </button>
+  );
+}
+```
+
+**Benefits of using a proxy:**
+- Bypasses browser CORS restrictions
+- Allows requests to any external x402 endpoint
+- Enables custom request/response logging
+- Provides a single point for request monitoring
+
+**Note:** You need to set up your own proxy server. The `customFetch` parameter is optional - if not provided, the SDK uses the native `fetch` function.
+
 ### Server Side (Next.js API Route)
 
 ```typescript
@@ -278,6 +366,7 @@ Creates a new x402 client instance.
   network: 'solana' | 'solana-devnet';
   rpcUrl?: string;                    // Optional custom RPC
   maxPaymentAmount?: bigint;          // Optional safety limit
+  customFetch?: typeof fetch;         // Optional custom fetch for proxy support
 }
 ```
 
