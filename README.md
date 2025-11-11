@@ -249,6 +249,162 @@ function MyComponent() {
 
 **Note:** You need to set up your own proxy server. The `customFetch` parameter is optional - if not provided, the SDK uses the native `fetch` function.
 
+#### Proxy Server Implementation
+
+To use `customFetch` with a proxy, you need to implement a proxy server endpoint. Here's a complete example:
+
+**Next.js API Route** (`app/api/proxy/route.ts`):
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(req: NextRequest) {
+  try {
+    const { url, method, headers, body } = await req.json();
+
+    // Validate inputs
+    if (!url || !method) {
+      return NextResponse.json({ error: 'url and method required' }, { status: 400 });
+    }
+
+    // Prepare headers (preserve x402 payment headers)
+    const requestHeaders: Record<string, string> = {
+      'Content-Type': headers?.['Content-Type'] || 'application/json',
+      'User-Agent': 'x402-solana-proxy/1.0',
+      ...(headers || {})
+    };
+
+    // Remove problematic headers
+    delete requestHeaders['host'];
+    delete requestHeaders['content-length'];
+
+    // Make request to target endpoint
+    const fetchOptions: RequestInit = {
+      method: method.toUpperCase(),
+      headers: requestHeaders,
+    };
+
+    if (method.toUpperCase() !== 'GET' && body) {
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
+
+    // Parse response
+    const contentType = response.headers.get('content-type') || '';
+    let responseData: any;
+
+    if (contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      responseData = await response.text();
+    }
+
+    // Prepare response headers
+    const responseHeaders: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      if (!['content-encoding', 'transfer-encoding', 'content-length'].includes(key.toLowerCase())) {
+        responseHeaders[key] = value;
+      }
+    });
+
+    // IMPORTANT: Return 200 with real status in body
+    // This allows proper x402 402 Payment Required handling
+    return NextResponse.json({
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+      data: responseData,
+      contentType,
+    }, { status: 200 });
+
+  } catch (error: any) {
+    console.error('[Proxy] Error:', error.message);
+    return NextResponse.json({
+      error: 'Proxy request failed',
+      details: error.message
+    }, { status: 500 });
+  }
+}
+```
+
+**Express Server** (`server.js`):
+```typescript
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+app.post('/api/proxy', async (req, res) => {
+  try {
+    const { url, method, headers, body } = req.body;
+
+    if (!url || !method) {
+      return res.status(400).json({ error: 'url and method required' });
+    }
+
+    const requestHeaders = {
+      'Content-Type': headers?.['Content-Type'] || 'application/json',
+      ...(headers || {})
+    };
+
+    delete requestHeaders['host'];
+    delete requestHeaders['content-length'];
+
+    const fetchOptions = {
+      method: method.toUpperCase(),
+      headers: requestHeaders,
+    };
+
+    if (method.toUpperCase() !== 'GET' && body) {
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
+    const contentType = response.headers.get('content-type') || '';
+
+    let responseData;
+    if (contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      responseData = await response.text();
+    }
+
+    const responseHeaders = {};
+    response.headers.forEach((value, key) => {
+      if (!['content-encoding', 'transfer-encoding', 'content-length'].includes(key.toLowerCase())) {
+        responseHeaders[key] = value;
+      }
+    });
+
+    // Return 200 with real status in body for x402 compatibility
+    res.status(200).json({
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+      data: responseData,
+      contentType,
+    });
+
+  } catch (error) {
+    console.error('[Proxy] Error:', error.message);
+    res.status(500).json({
+      error: 'Proxy request failed',
+      details: error.message
+    });
+  }
+});
+
+app.listen(3001, () => console.log('Proxy server running on port 3001'));
+```
+
+**Key Points:**
+- Always return HTTP 200 from proxy, with real status code in the response body
+- This is critical for x402 402 Payment Required responses to work correctly
+- Preserve x402 headers (`X-PAYMENT`, `X-PAYMENT-RESPONSE`)
+- Remove problematic headers (`host`, `content-length`)
+
 ### Server Side (Next.js API Route)
 
 ```typescript
