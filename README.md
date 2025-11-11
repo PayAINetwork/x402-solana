@@ -161,6 +161,250 @@ function MyComponent() {
 }
 ```
 
+#### Using with a Proxy Server (CORS Bypass)
+
+If you're making requests from a browser to external APIs and encountering CORS issues, you can provide a custom fetch function that routes requests through your proxy server:
+
+```typescript
+import { createX402Client } from 'x402-solana/client';
+import { useWallet } from '@solana/wallet-adapter-react';
+
+function MyComponent() {
+  const wallet = useWallet();
+
+  // Create a custom fetch function that uses your proxy
+  const createProxyFetch = () => {
+    const proxyUrl = process.env.NEXT_PUBLIC_PROXY_URL || 'http://localhost:3001/api/proxy';
+
+    return async (url: string | RequestInfo, init?: RequestInit): Promise<Response> => {
+      // Send request through proxy server
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: typeof url === 'string' ? url : url.toString(),
+          method: init?.method || 'GET',
+          headers: init?.headers || {},
+          body: init?.body
+        })
+      });
+
+      const proxyData = await response.json();
+
+      // Reconstruct Response object with original status
+      return new Response(
+        typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data),
+        {
+          status: proxyData.status,
+          statusText: proxyData.statusText || '',
+          headers: new Headers(proxyData.headers || {})
+        }
+      );
+    };
+  };
+
+  const handlePaidRequest = async () => {
+    if (!wallet.connected || !wallet.publicKey) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    // Create x402 client with custom fetch
+    const client = createX402Client({
+      wallet: {
+        address: wallet.publicKey.toString(),
+        signTransaction: async (tx) => {
+          if (!wallet.signTransaction) throw new Error('Wallet does not support signing');
+          return await wallet.signTransaction(tx);
+        },
+      },
+      network: 'solana-devnet',
+      maxPaymentAmount: BigInt(10_000_000),
+      customFetch: createProxyFetch() // Use proxy for all requests
+    });
+
+    // All requests now go through your proxy server
+    const response = await client.fetch('https://external-api.com/endpoint', {
+      method: 'POST',
+      body: JSON.stringify({ data: 'your request' }),
+    });
+
+    const result = await response.json();
+    console.log('Result:', result);
+  };
+
+  return (
+    <button onClick={handlePaidRequest} disabled={!wallet.connected}>
+      Make Paid Request (via Proxy)
+    </button>
+  );
+}
+```
+
+**Benefits of using a proxy:**
+- Bypasses browser CORS restrictions
+- Allows requests to any external x402 endpoint
+- Enables custom request/response logging
+- Provides a single point for request monitoring
+
+**Note:** You need to set up your own proxy server. The `customFetch` parameter is optional - if not provided, the SDK uses the native `fetch` function.
+
+#### Proxy Server Implementation
+
+To use `customFetch` with a proxy, you need to implement a proxy server endpoint. Here's a complete example:
+
+**Next.js API Route** (`app/api/proxy/route.ts`):
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(req: NextRequest) {
+  try {
+    const { url, method, headers, body } = await req.json();
+
+    // Validate inputs
+    if (!url || !method) {
+      return NextResponse.json({ error: 'url and method required' }, { status: 400 });
+    }
+
+    // Prepare headers (preserve x402 payment headers)
+    const requestHeaders: Record<string, string> = {
+      'Content-Type': headers?.['Content-Type'] || 'application/json',
+      'User-Agent': 'x402-solana-proxy/1.0',
+      ...(headers || {})
+    };
+
+    // Remove problematic headers
+    delete requestHeaders['host'];
+    delete requestHeaders['content-length'];
+
+    // Make request to target endpoint
+    const fetchOptions: RequestInit = {
+      method: method.toUpperCase(),
+      headers: requestHeaders,
+    };
+
+    if (method.toUpperCase() !== 'GET' && body) {
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
+
+    // Parse response
+    const contentType = response.headers.get('content-type') || '';
+    let responseData: any;
+
+    if (contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      responseData = await response.text();
+    }
+
+    // Prepare response headers
+    const responseHeaders: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      if (!['content-encoding', 'transfer-encoding', 'content-length'].includes(key.toLowerCase())) {
+        responseHeaders[key] = value;
+      }
+    });
+
+    // IMPORTANT: Return 200 with real status in body
+    // This allows proper x402 402 Payment Required handling
+    return NextResponse.json({
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+      data: responseData,
+      contentType,
+    }, { status: 200 });
+
+  } catch (error: any) {
+    console.error('[Proxy] Error:', error.message);
+    return NextResponse.json({
+      error: 'Proxy request failed',
+      details: error.message
+    }, { status: 500 });
+  }
+}
+```
+
+**Express Server** (`server.js`):
+```typescript
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+app.post('/api/proxy', async (req, res) => {
+  try {
+    const { url, method, headers, body } = req.body;
+
+    if (!url || !method) {
+      return res.status(400).json({ error: 'url and method required' });
+    }
+
+    const requestHeaders = {
+      'Content-Type': headers?.['Content-Type'] || 'application/json',
+      ...(headers || {})
+    };
+
+    delete requestHeaders['host'];
+    delete requestHeaders['content-length'];
+
+    const fetchOptions = {
+      method: method.toUpperCase(),
+      headers: requestHeaders,
+    };
+
+    if (method.toUpperCase() !== 'GET' && body) {
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
+    const contentType = response.headers.get('content-type') || '';
+
+    let responseData;
+    if (contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      responseData = await response.text();
+    }
+
+    const responseHeaders = {};
+    response.headers.forEach((value, key) => {
+      if (!['content-encoding', 'transfer-encoding', 'content-length'].includes(key.toLowerCase())) {
+        responseHeaders[key] = value;
+      }
+    });
+
+    // Return 200 with real status in body for x402 compatibility
+    res.status(200).json({
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+      data: responseData,
+      contentType,
+    });
+
+  } catch (error) {
+    console.error('[Proxy] Error:', error.message);
+    res.status(500).json({
+      error: 'Proxy request failed',
+      details: error.message
+    });
+  }
+});
+
+app.listen(3001, () => console.log('Proxy server running on port 3001'));
+```
+
+**Key Points:**
+- Always return HTTP 200 from proxy, with real status code in the response body
+- This is critical for x402 402 Payment Required responses to work correctly
+- Preserve x402 headers (`X-PAYMENT`, `X-PAYMENT-RESPONSE`)
+- Remove problematic headers (`host`, `content-length`)
+
 ### Server Side (Next.js API Route)
 
 ```typescript
@@ -278,6 +522,7 @@ Creates a new x402 client instance.
   network: 'solana' | 'solana-devnet';
   rpcUrl?: string;                    // Optional custom RPC
   maxPaymentAmount?: bigint;          // Optional safety limit
+  customFetch?: typeof fetch;         // Optional custom fetch for proxy support
 }
 ```
 
