@@ -88,3 +88,8 @@ Thumbs.db
 # Testing
 .jest/
 pnpm
+
+# E2E Proxy Tests (local validation only - DO NOT COMMIT)
+tests/e2e-proxy.test.ts
+tests/helpers/proxyFetchWrapper.ts
+tests/E2E-README.md
