@@ -22,7 +22,7 @@ describe('CustomFetch', () => {
       const client = createX402Client({
         wallet: mockWallet,
         network: 'solana-devnet',
-        maxPaymentAmount: BigInt(10000),
+        amount: BigInt(10000),
       });
 
       expect(client).toBeDefined();

@@ -29,7 +29,7 @@ export interface X402ClientConfig {
   /** Custom RPC URL (defaults to public endpoint) */
   rpcUrl?: string;
   /** Maximum payment amount in atomic units (0 = no limit) */
-  maxPaymentAmount?: bigint;
+  amount?: bigint;
   /**
    * Optional custom fetch function for making HTTP requests.
    * Useful for routing requests through a proxy server to avoid CORS issues

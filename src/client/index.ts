@@ -20,7 +20,7 @@ export class X402Client {
       fetchFn,
       config.wallet,
       rpcUrl,
-      config.maxPaymentAmount || BigInt(0),
+      config.amount || BigInt(0),
       config.verbose || false
     );
   }
