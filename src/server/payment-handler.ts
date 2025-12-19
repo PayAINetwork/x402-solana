@@ -1,34 +1,47 @@
-import { X402ServerConfig, PaymentRequirements, RouteConfig, SPLTokenAmount, VerifyResponse, SettleResponse } from "../types";
-import { getDefaultRpcUrl, getDefaultTokenAsset } from "../utils";
-import { FacilitatorClient } from "./facilitator-client";
+import type {
+  PaymentRequirements,
+  PaymentRequired,
+  VerifyResponse,
+  SettleResponse,
+} from '@x402/core/types';
+import type { X402ServerConfig, RouteConfig, TokenAsset } from '../types';
+import { toCAIP2Network } from '../types';
+import type { Network } from '@x402/core/types';
+import { getDefaultRpcUrl, getDefaultTokenAsset } from '../utils';
+import { FacilitatorClient } from './facilitator-client';
 
 /**
- * x402 Payment Handler for server-side payment processing
- * Framework agnostic - works with any Node.js HTTP framework
+ * Internal configuration with defaults resolved
  */
 interface InternalConfig {
-  network: X402ServerConfig['network'];
+  network: string; // CAIP-2 format
   treasuryAddress: string;
   facilitatorUrl: string;
   rpcUrl: string;
-  defaultToken: SPLTokenAmount['asset'];
-  middlewareConfig?: X402ServerConfig['middlewareConfig'];
+  defaultToken: TokenAsset;
+  defaultDescription: string;
+  defaultTimeoutSeconds: number;
 }
 
+/**
+ * x402 Payment Handler for server-side payment processing (v2)
+ * Framework agnostic - works with any Node.js HTTP framework
+ */
 export class X402PaymentHandler {
   private facilitatorClient: FacilitatorClient;
   private config: InternalConfig;
 
   constructor(config: X402ServerConfig) {
-    const defaultToken = getDefaultTokenAsset(config.network);
+    const defaultToken = config.defaultToken || getDefaultTokenAsset(config.network);
 
     this.config = {
-      network: config.network,
+      network: toCAIP2Network(config.network),
       treasuryAddress: config.treasuryAddress,
       facilitatorUrl: config.facilitatorUrl,
       rpcUrl: config.rpcUrl || getDefaultRpcUrl(config.network),
-      defaultToken: config.defaultToken || defaultToken,
-      middlewareConfig: config.middlewareConfig,
+      defaultToken,
+      defaultDescription: config.defaultDescription || 'Payment required',
+      defaultTimeoutSeconds: config.defaultTimeoutSeconds || 300,
     };
 
     this.facilitatorClient = new FacilitatorClient(config.facilitatorUrl);
@@ -41,51 +54,40 @@ export class X402PaymentHandler {
   extractPayment(headers: Record<string, string | string[] | undefined> | Headers): string | null {
     // Handle Headers object (Next.js, Fetch API)
     if (headers instanceof Headers) {
-      return headers.get("X-PAYMENT") || headers.get("x-payment");
+      return headers.get('X-PAYMENT') || headers.get('x-payment');
     }
 
     // Handle plain object (Express, Fastify, etc.)
-    const xPayment = headers["X-PAYMENT"] || headers["x-payment"];
+    const xPayment = headers['X-PAYMENT'] || headers['x-payment'];
     return Array.isArray(xPayment) ? xPayment[0] || null : xPayment || null;
   }
 
   /**
-   * Create payment requirements object from x402 RouteConfig
-   * @param routeConfig - x402 standard RouteConfig (price, network, config)
-   * @param resource - Optional resource URL override (uses config.resource if not provided)
+   * Create payment requirements for a protected resource
+   *
+   * @param routeConfig - Route-specific configuration
+   * @param resourceUrl - URL of the protected resource
+   * @returns Payment requirements object
    */
   async createPaymentRequirements(
     routeConfig: RouteConfig,
-    resource?: string
+    resourceUrl: string
   ): Promise<PaymentRequirements> {
+    // Get fee payer from facilitator
     const feePayer = await this.facilitatorClient.getFeePayer(this.config.network);
 
-    // Extract SPLTokenAmount from price (supports Price union type)
-    const price = routeConfig.price as SPLTokenAmount;
-
-    // Merge config: routeConfig.config overrides server middlewareConfig defaults
-    const config = { ...this.config.middlewareConfig, ...routeConfig.config };
-
-    // Resource: use override if provided, otherwise use config.resource
-    const finalResource = resource || config.resource;
-    if (!finalResource) {
-      throw new Error("resource is required: provide either as parameter or in RouteConfig.config.resource");
-    }
-
-    // Always include outputSchema field (required for facilitator discovery)
     const paymentRequirements: PaymentRequirements = {
-      scheme: "exact",
-      network: routeConfig.network as typeof this.config.network,
-      maxAmountRequired: price.amount,
-      resource: finalResource,
-      description: config.description || "Payment required",
-      mimeType: config.mimeType || "application/json",
+      scheme: 'exact',
+      network: this.config.network as Network,
+      amount: routeConfig.amount,
       payTo: this.config.treasuryAddress,
-      maxTimeoutSeconds: config.maxTimeoutSeconds || 300,
-      asset: price.asset.address,
-      outputSchema: config.outputSchema || {},
+      maxTimeoutSeconds: routeConfig.maxTimeoutSeconds || this.config.defaultTimeoutSeconds,
+      asset: routeConfig.asset.address,
       extra: {
         feePayer,
+        description: routeConfig.description || this.config.defaultDescription,
+        mimeType: routeConfig.mimeType || 'application/json',
+        resource: resourceUrl,
       },
     };
 
@@ -93,24 +95,30 @@ export class X402PaymentHandler {
   }
 
   /**
-   * Create a 402 Payment Required response body
+   * Create a 402 Payment Required response body (v2)
    * Use this with your framework's response method
+   *
    * @param requirements - Payment requirements (from createPaymentRequirements)
+   * @param resourceUrl - URL of the protected resource
    */
-  create402Response(requirements: PaymentRequirements): {
+  create402Response(
+    requirements: PaymentRequirements,
+    resourceUrl: string
+  ): {
     status: 402;
-    body: {
-      x402Version: number;
-      accepts: PaymentRequirements[];
-      error?: string;
-    };
+    body: PaymentRequired;
   } {
     return {
       status: 402,
       body: {
-        x402Version: 1,
+        x402Version: 2,
+        resource: {
+          url: resourceUrl,
+          description: (requirements.extra?.description as string) || '',
+          mimeType: (requirements.extra?.mimeType as string) || 'application/json',
+        },
         accepts: [requirements],
-        error: "Payment required",
+        error: 'Payment required',
       },
     };
   }
@@ -136,5 +144,18 @@ export class X402PaymentHandler {
   ): Promise<SettleResponse> {
     return this.facilitatorClient.settlePayment(paymentHeader, paymentRequirements);
   }
-}
 
+  /**
+   * Get the network in CAIP-2 format
+   */
+  getNetwork(): string {
+    return this.config.network;
+  }
+
+  /**
+   * Get the treasury address
+   */
+  getTreasuryAddress(): string {
+    return this.config.treasuryAddress;
+  }
+}

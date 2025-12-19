@@ -1,99 +1,119 @@
-import { VersionedTransaction } from "@solana/web3.js";
-import { PaymentRequirements, SolanaNetwork, SPLTokenAmount } from "../types";
+import type { VersionedTransaction } from '@solana/web3.js';
+import type { PaymentRequirements, PaymentPayload } from '@x402/core/types';
+import {
+  type TokenAsset,
+  SOLANA_MAINNET_CAIP2,
+  SOLANA_DEVNET_CAIP2,
+  isSolanaMainnet,
+} from '../types';
 
 /**
- * Helper utilities for x402 payment processing
+ * Helper utilities for x402 payment processing (v2)
  */
 
+// USDC token addresses
+const USDC_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const USDC_DEVNET = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
+
 /**
- * Create payment header from a signed transaction
- * Encodes transaction and payment details into base64 X-PAYMENT header
+ * Create v2 payment payload from a signed transaction
+ * Encodes transaction and payment details for X-PAYMENT header
+ *
+ * @param transaction - Signed Solana VersionedTransaction
+ * @param paymentRequirements - The accepted payment requirements
+ * @param resourceUrl - URL of the protected resource
+ * @returns Base64-encoded payment payload for X-PAYMENT header
  */
-export function createPaymentHeaderFromTransaction(
+export function createPaymentPayload(
   transaction: VersionedTransaction,
   paymentRequirements: PaymentRequirements,
-  x402Version: number
+  resourceUrl: string
 ): string {
-  // Serialize the signed transaction
-  const serializedTransaction = Buffer.from(transaction.serialize()).toString("base64");
+  // Serialize the signed transaction to base64
+  const base64Transaction = Buffer.from(transaction.serialize()).toString('base64');
 
-  // Create payment payload matching x402 spec
-  const paymentPayload = {
-    x402Version: x402Version,
-    scheme: paymentRequirements.scheme,
-    network: paymentRequirements.network,
+  // Create v2 payment payload
+  const paymentPayload: PaymentPayload = {
+    x402Version: 2,
+    resource: {
+      url: resourceUrl,
+      description: (paymentRequirements.extra?.description as string) || '',
+      mimeType: (paymentRequirements.extra?.mimeType as string) || 'application/json',
+    },
+    accepted: paymentRequirements,
     payload: {
-      transaction: serializedTransaction,
+      transaction: base64Transaction,
     },
   };
 
   // Encode payment payload as base64 for X-PAYMENT header
-  const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString("base64");
+  const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
 
   return paymentHeader;
 }
 
 /**
  * Get default RPC URL for a given Solana network
- * @param network - Must be 'solana' or 'solana-devnet'
+ * @param network - Network in any format (simple or CAIP-2)
  * @returns Default RPC URL for the network
  */
-export function getDefaultRpcUrl(network: SolanaNetwork): string {
-  if (network === "solana") {
-    return "https://api.mainnet-beta.solana.com";
-  } else if (network === "solana-devnet") {
-    return "https://api.devnet.solana.com";
+export function getDefaultRpcUrl(network: string): string {
+  if (isSolanaMainnet(network)) {
+    return 'https://api.mainnet-beta.solana.com';
   }
-  // TypeScript ensures network is one of the two options, so this is unreachable
-  throw new Error(`Unexpected network: ${network}`);
+  return 'https://api.devnet.solana.com';
 }
 
 /**
- * Get default SPL token asset for a given Solana network
- * Defaults to USDC, returns x402-compatible SPLTokenAmount['asset']
+ * Get RPC URL for a CAIP-2 network identifier
+ * @param network - Network in CAIP-2 format (e.g., "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp")
+ * @returns RPC URL for the network
  */
-export function getDefaultTokenAsset(network: SolanaNetwork): SPLTokenAmount['asset'] {
-  if (network === "solana") {
+export function getRpcUrlForNetwork(network: string): string {
+  if (network === SOLANA_MAINNET_CAIP2) {
+    return 'https://api.mainnet-beta.solana.com';
+  }
+  if (network === SOLANA_DEVNET_CAIP2) {
+    return 'https://api.devnet.solana.com';
+  }
+  // Fallback for unknown networks
+  return 'https://api.devnet.solana.com';
+}
+
+/**
+ * Get default USDC token asset for a given Solana network
+ * @param network - Network in any format (simple or CAIP-2)
+ * @returns USDC token asset configuration
+ */
+export function getDefaultTokenAsset(network: string): TokenAsset {
+  if (isSolanaMainnet(network)) {
     return {
-      address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-      decimals: 6,
-    };
-  } else if (network === "solana-devnet") {
-    return {
-      address: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      address: USDC_MAINNET,
       decimals: 6,
     };
   }
-  // TypeScript ensures network is one of the two options, so this is unreachable
-  throw new Error(`Unexpected network: ${network}`);
+  return {
+    address: USDC_DEVNET,
+    decimals: 6,
+  };
 }
 
 /**
  * Convert human-readable amount to token's smallest unit (atomic units)
  * @param amount - Human-readable amount (e.g., 2.5 for 2.5 USDC)
  * @param decimals - Token decimals (e.g., 6 for USDC, 9 for SOL)
+ * @returns Amount in atomic units as string
  */
-export function toAtomicUnits(amount: number, decimals: number): bigint {
-  return BigInt(Math.floor(amount * Math.pow(10, decimals)));
+export function toAtomicUnits(amount: number, decimals: number): string {
+  return Math.floor(amount * Math.pow(10, decimals)).toString();
 }
 
 /**
  * Convert token's atomic units to human-readable amount
- * @param atomicUnits - Token amount in smallest units
+ * @param atomicUnits - Token amount in smallest units (as string or bigint)
  * @param decimals - Token decimals (e.g., 6 for USDC, 9 for SOL)
+ * @returns Human-readable amount
  */
-export function fromAtomicUnits(atomicUnits: bigint | number, decimals: number): number {
+export function fromAtomicUnits(atomicUnits: string | bigint | number, decimals: number): number {
   return Number(atomicUnits) / Math.pow(10, decimals);
 }
-
-// Legacy USDC-specific helpers (deprecated, use toAtomicUnits/fromAtomicUnits instead)
-/** @deprecated Use toAtomicUnits(amount, 6) instead */
-export function usdToMicroUsdc(usdAmount: number): number {
-  return Math.floor(usdAmount * 1_000_000);
-}
-
-/** @deprecated Use fromAtomicUnits(microUsdc, 6) instead */
-export function microUsdcToUsd(microUsdc: number): number {
-  return microUsdc / 1_000_000;
-}
-

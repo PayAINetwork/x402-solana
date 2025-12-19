@@ -1,27 +1,34 @@
-import { VersionedTransaction } from "@solana/web3.js";
-import { SolanaNetwork } from "./x402-protocol";
-import type { PaymentMiddlewareConfig, SPLTokenAmount, RouteConfig } from "x402/types";
+import type { VersionedTransaction } from '@solana/web3.js';
+import type { SolanaNetworkSimple } from './x402-protocol';
 
 /**
- * Solana-specific payment types
+ * Solana-specific payment types (v2)
  */
 
-// Re-export x402 types
-export type { PaymentMiddlewareConfig, SPLTokenAmount, RouteConfig };
-
-// Wallet adapter interface - framework agnostic
-// Compatible with both Anza wallet-adapter and custom implementations
+/**
+ * Wallet adapter interface - framework agnostic
+ * Compatible with both Anza wallet-adapter and custom implementations
+ */
 export interface WalletAdapter {
-  publicKey?: { toString(): string }; // Anza wallet-adapter standard
-  address?: string; // Alternative property
+  /** Anza wallet-adapter standard - wallet public key */
+  publicKey?: { toString(): string };
+  /** Alternative property for address */
+  address?: string;
+  /** Sign a transaction - required for payment */
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 }
 
-// Client configuration
+/**
+ * Client configuration for x402 Solana client
+ */
 export interface X402ClientConfig {
+  /** Connected wallet adapter */
   wallet: WalletAdapter;
-  network: SolanaNetwork;
+  /** Solana network (simple format: "solana" | "solana-devnet") */
+  network: SolanaNetworkSimple;
+  /** Custom RPC URL (defaults to public endpoint) */
   rpcUrl?: string;
+  /** Maximum payment amount in atomic units (0 = no limit) */
   maxPaymentAmount?: bigint;
   /**
    * Optional custom fetch function for making HTTP requests.
@@ -29,47 +36,54 @@ export interface X402ClientConfig {
    * or adding custom request/response handling.
    *
    * @default globalThis.fetch
-   *
-   * @example
-   * ```typescript
-   * // Using a proxy to bypass CORS
-   * const proxyFetch = async (url, init) => {
-   *   const proxyUrl = 'https://your-proxy.com/proxy';
-   *   return fetch(proxyUrl, {
-   *     method: 'POST',
-   *     headers: { 'Content-Type': 'application/json' },
-   *     body: JSON.stringify({ url, method: init?.method, headers: init?.headers, body: init?.body })
-   *   }).then(async (res) => {
-   *     const proxyData = await res.json();
-   *     return new Response(
-   *       typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data),
-   *       { status: proxyData.status, statusText: proxyData.statusText, headers: new Headers(proxyData.headers) }
-   *     );
-   *   });
-   * };
-   *
-   * const client = createX402Client({
-   *   wallet,
-   *   network: 'solana-devnet',
-   *   customFetch: proxyFetch
-   * });
-   * ```
    */
   customFetch?: typeof fetch;
+  /** Enable verbose logging for debugging (default: false) */
+  verbose?: boolean;
 }
 
-// Server configuration - aligns with x402 RouteConfig pattern
+/**
+ * Token asset configuration
+ */
+export interface TokenAsset {
+  /** Token mint address */
+  address: string;
+  /** Token decimals */
+  decimals: number;
+}
+
+/**
+ * Server configuration for x402 payment handler
+ */
 export interface X402ServerConfig {
-  network: SolanaNetwork;
-  treasuryAddress: string; // Where payments are sent (payTo)
+  /** Solana network (simple format: "solana" | "solana-devnet") */
+  network: SolanaNetworkSimple;
+  /** Treasury address where payments are sent */
+  treasuryAddress: string;
+  /** Facilitator service URL */
   facilitatorUrl: string;
+  /** Custom RPC URL (defaults to public endpoint) */
   rpcUrl?: string;
-  defaultToken?: SPLTokenAmount['asset']; // Default token to accept (defaults to USDC)
-  middlewareConfig?: PaymentMiddlewareConfig; // Default middleware config
+  /** Default token to accept (defaults to USDC) */
+  defaultToken?: TokenAsset;
+  /** Default description for payments */
+  defaultDescription?: string;
+  /** Default timeout in seconds */
+  defaultTimeoutSeconds?: number;
 }
 
-// Helper function to check if a network is Solana-based
-export function isSolanaNetwork(network: string): network is "solana" | "solana-devnet" {
-  return network === "solana" || network === "solana-devnet";
+/**
+ * Route configuration for protected endpoints
+ */
+export interface RouteConfig {
+  /** Price in atomic units */
+  amount: string;
+  /** Token asset for payment */
+  asset: TokenAsset;
+  /** Resource description */
+  description?: string;
+  /** Response MIME type */
+  mimeType?: string;
+  /** Payment timeout in seconds */
+  maxTimeoutSeconds?: number;
 }
-
