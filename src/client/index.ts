@@ -1,12 +1,11 @@
-import { X402ClientConfig } from "../types";
-import { getDefaultRpcUrl } from "../utils";
-import { createPaymentFetch } from "./payment-interceptor";
+import type { X402ClientConfig } from '../types';
+import { getDefaultRpcUrl } from '../utils';
+import { createPaymentFetch } from './payment-interceptor';
 
 /**
- * x402 Solana Client
+ * x402 Solana Client (v2)
  * Handles automatic payment for x402-protected endpoints
  */
-
 export class X402Client {
   private paymentFetch: ReturnType<typeof createPaymentFetch>;
 
@@ -21,7 +20,8 @@ export class X402Client {
       fetchFn,
       config.wallet,
       rpcUrl,
-      config.maxPaymentAmount || BigInt(0)
+      config.amount || BigInt(0),
+      config.verbose || false
     );
   }
 
@@ -42,5 +42,4 @@ export function createX402Client(config: X402ClientConfig): X402Client {
 }
 
 // Re-export types for convenience
-export type { X402ClientConfig, WalletAdapter } from "../types";
-
+export type { X402ClientConfig, WalletAdapter } from '../types';

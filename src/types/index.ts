@@ -1,54 +1,47 @@
 /**
- * x402 Solana - Types Package
- * All TypeScript types and Zod schemas for the x402 protocol
+ * x402 Solana - Types Package (v2)
+ * All TypeScript types for the x402 protocol v2
  */
 
 // ============================================
-// Import types and schemas from x402 package
+// Import types from @x402/core package
 // ============================================
 export type {
-    // Solana/SVM specific
-    ExactSvmPayload,
+  // Protocol types (v2)
+  PaymentRequirements,
+  PaymentPayload,
+  PaymentRequired,
 
-    // Protocol types
-    PaymentRequirements,
-    x402Response,
-    VerifyResponse,
-    SettleResponse,
-    SupportedPaymentKind,
-    SupportedPaymentKindsResponse,
+  // Facilitator types
+  VerifyRequest,
+  VerifyResponse,
+  SettleRequest,
+  SettleResponse,
+  SupportedResponse,
 
-    // Error handling
-    ErrorReasons,
+  // Common types
+  Network,
+  Money,
+  Price,
+  AssetAmount,
+} from '@x402/core/types';
 
-    // Middleware & routing
-    PaymentMiddlewareConfig,
-    SPLTokenAmount,
-    RouteConfig,
-} from "x402/types";
-
-export {
-    // Schemas
-    ExactSvmPayloadSchema,
-    PaymentRequirementsSchema,
-    x402ResponseSchema,
-    VerifyResponseSchema,
-    SettleResponseSchema,
-    SupportedPaymentKindSchema,
-    SupportedPaymentKindsResponseSchema,
-
-    // Constants
-    SupportedSVMNetworks,
-    SvmNetworkToChainId,
-} from "x402/types";
+// ============================================
+// SVM payload type (defined locally to avoid @x402/svm dependency)
+// ============================================
+/**
+ * Exact SVM payload containing a base64 encoded Solana transaction
+ */
+export interface ExactSvmPayload {
+  transaction: string;
+}
 
 // ============================================
 // Solana-only variants (local)
 // ============================================
-export * from "./x402-protocol";  // SolanaNetwork, SolanaPaymentPayload
+export * from './x402-protocol';
 
 // ============================================
 // Custom Solana types
 // ============================================
-export * from "./solana-payment";  // WalletAdapter, configs, etc.
-
+export * from './solana-payment';
