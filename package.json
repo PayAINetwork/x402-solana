@@ -1,5 +1,5 @@
 {
-  "name": "x402-solana",
+  "name": "@payai/x402-solana",
   "version": "1.0.0-canary.1",
   "description": "A framework-agnostic implementation of the x402 payment protocol for Solana (v2)",
   "keywords": [
