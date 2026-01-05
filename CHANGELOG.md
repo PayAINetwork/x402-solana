@@ -14,7 +14,7 @@ This release upgrades to x402 protocol v2. This is a breaking change from v0.1.x
 ### Changed
 
 - **Protocol Version**: Upgraded from x402 v1 to v2
-- **Package Name**: Changed from `x402-solana` to `@payai/x402-solana`
+- **Package Name**: Remains `x402-solana` (unscoped)
 - **Network Format**: Now uses CAIP-2 format internally (`solana:chainId`)
   - Mainnet: `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`
   - Devnet: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`
@@ -53,9 +53,9 @@ This release upgrades to x402 protocol v2. This is a breaking change from v0.1.x
 import { createX402Client } from 'x402-solana/client';
 import { X402PaymentHandler } from 'x402-solana/server';
 
-// After
-import { createX402Client } from '@payai/x402-solana/client';
-import { X402PaymentHandler } from '@payai/x402-solana/server';
+// After (v2 - same package name, new API)
+import { createX402Client } from 'x402-solana/client';
+import { X402PaymentHandler } from 'x402-solana/server';
 ```
 
 #### 2. Network Configuration (No changes needed)

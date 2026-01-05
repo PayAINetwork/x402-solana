@@ -16,19 +16,19 @@ A reusable, framework-agnostic implementation of the x402 payment protocol v2 fo
 ## Installation
 
 ```bash
-pnpm add @payai/x402-solana
+pnpm add x402-solana
 ```
 
 Or with npm:
 
 ```bash
-npm install @payai/x402-solana
+npm install x402-solana
 ```
 
 Or with yarn:
 
 ```bash
-yarn add @payai/x402-solana
+yarn add x402-solana
 ```
 
 ## x402 Protocol v2
@@ -101,7 +101,7 @@ export default function App({ Component, pageProps }) {
 Use in your component:
 
 ```typescript
-import { createX402Client } from '@payai/x402-solana/client';
+import { createX402Client } from 'x402-solana/client';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 
@@ -151,7 +151,7 @@ function MyComponent() {
 #### Option 2: Using Privy
 
 ```typescript
-import { createX402Client } from '@payai/x402-solana/client';
+import { createX402Client } from 'x402-solana/client';
 import { useSolanaWallets } from '@privy-io/react-auth/solana';
 
 function MyComponent() {
@@ -180,7 +180,7 @@ function MyComponent() {
 If you're making requests from a browser to external APIs and encountering CORS issues, you can provide a custom fetch function that routes requests through your proxy server:
 
 ```typescript
-import { createX402Client } from '@payai/x402-solana/client';
+import { createX402Client } from 'x402-solana/client';
 import { useWallet } from '@solana/wallet-adapter-react';
 
 function MyComponent() {
@@ -436,7 +436,7 @@ app.listen(3001, () => console.log('Proxy server running on port 3001'));
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
-import { X402PaymentHandler } from '@payai/x402-solana/server';
+import { X402PaymentHandler } from 'x402-solana/server';
 
 const x402 = new X402PaymentHandler({
   network: 'solana-devnet', // Simple format - automatically converted to CAIP-2
@@ -499,7 +499,7 @@ export async function POST(req: NextRequest) {
 
 ```typescript
 import express from 'express';
-import { X402PaymentHandler } from '@payai/x402-solana/server';
+import { X402PaymentHandler } from 'x402-solana/server';
 
 const app = express();
 const x402 = new X402PaymentHandler({
@@ -638,7 +638,7 @@ import {
   isSolanaNetwork,
   isSolanaMainnet,
   isSolanaDevnet,
-} from '@payai/x402-solana/types';
+} from 'x402-solana/types';
 
 // Convert between formats
 const caip2 = toCAIP2Network('solana-devnet'); // 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
@@ -770,7 +770,7 @@ Payment amounts are in USDC atomic units (6 decimals) as **strings**:
 **Helper functions:**
 
 ```typescript
-import { toAtomicUnits, fromAtomicUnits } from '@payai/x402-solana/utils';
+import { toAtomicUnits, fromAtomicUnits } from 'x402-solana/utils';
 
 const atomicUnits = toAtomicUnits(2.5, 6); // "2500000"
 const usd = fromAtomicUnits('2500000', 6); // 2.5
