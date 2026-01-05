@@ -1,19 +1,19 @@
-import type { VersionedTransaction } from '@solana/web3.js';
-import type { PaymentRequirements, PaymentPayload } from '@payai/x402/types';
+import type { VersionedTransaction } from "@solana/web3.js";
+import type { PaymentRequirements, PaymentPayload } from "@payai/x402/types";
 import {
   type TokenAsset,
   SOLANA_MAINNET_CAIP2,
   SOLANA_DEVNET_CAIP2,
   isSolanaMainnet,
-} from '../types';
+} from "../types";
 
 /**
  * Helper utilities for x402 payment processing (v2)
  */
 
 // USDC token addresses
-const USDC_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const USDC_DEVNET = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
+const USDC_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const USDC_DEVNET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 /**
  * Create v2 payment payload from a signed transaction
@@ -27,18 +27,21 @@ const USDC_DEVNET = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
 export function createPaymentPayload(
   transaction: VersionedTransaction,
   paymentRequirements: PaymentRequirements,
-  resourceUrl: string
+  resourceUrl: string,
 ): string {
   // Serialize the signed transaction to base64
-  const base64Transaction = Buffer.from(transaction.serialize()).toString('base64');
+  const base64Transaction = Buffer.from(transaction.serialize()).toString(
+    "base64",
+  );
 
   // Create v2 payment payload
   const paymentPayload: PaymentPayload = {
     x402Version: 2,
     resource: {
       url: resourceUrl,
-      description: (paymentRequirements.extra?.description as string) || '',
-      mimeType: (paymentRequirements.extra?.mimeType as string) || 'application/json',
+      description: (paymentRequirements.extra?.description as string) || "",
+      mimeType:
+        (paymentRequirements.extra?.mimeType as string) || "application/json",
     },
     accepted: paymentRequirements,
     payload: {
@@ -47,7 +50,9 @@ export function createPaymentPayload(
   };
 
   // Encode payment payload as base64 for X-PAYMENT header
-  const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
+  const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString(
+    "base64",
+  );
 
   return paymentHeader;
 }
@@ -59,9 +64,9 @@ export function createPaymentPayload(
  */
 export function getDefaultRpcUrl(network: string): string {
   if (isSolanaMainnet(network)) {
-    return 'https://api.mainnet-beta.solana.com';
+    return "https://api.mainnet-beta.solana.com";
   }
-  return 'https://api.devnet.solana.com';
+  return "https://api.devnet.solana.com";
 }
 
 /**
@@ -71,13 +76,13 @@ export function getDefaultRpcUrl(network: string): string {
  */
 export function getRpcUrlForNetwork(network: string): string {
   if (network === SOLANA_MAINNET_CAIP2) {
-    return 'https://api.mainnet-beta.solana.com';
+    return "https://api.mainnet-beta.solana.com";
   }
   if (network === SOLANA_DEVNET_CAIP2) {
-    return 'https://api.devnet.solana.com';
+    return "https://api.devnet.solana.com";
   }
   // Fallback for unknown networks
-  return 'https://api.devnet.solana.com';
+  return "https://api.devnet.solana.com";
 }
 
 /**
@@ -114,6 +119,9 @@ export function toAtomicUnits(amount: number, decimals: number): string {
  * @param decimals - Token decimals (e.g., 6 for USDC, 9 for SOL)
  * @returns Human-readable amount
  */
-export function fromAtomicUnits(atomicUnits: string | bigint | number, decimals: number): number {
+export function fromAtomicUnits(
+  atomicUnits: string | bigint | number,
+  decimals: number,
+): number {
   return Number(atomicUnits) / Math.pow(10, decimals);
 }

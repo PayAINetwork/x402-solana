@@ -65,7 +65,7 @@
     "@payai/x402": "2.0.0-payai.6",
     "@solana/spl-token": ">=0.4.14",
     "@solana/web3.js": ">=1.98.4",
-    "zod": "^3.24.2"
+    "zod": "^4.3.5"
   },
   "peerDependencies": {
     "@solana/spl-token": ">=0.4.14",
