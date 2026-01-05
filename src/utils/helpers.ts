@@ -1,5 +1,5 @@
 import type { VersionedTransaction } from '@solana/web3.js';
-import type { PaymentRequirements, PaymentPayload } from '@x402/core/types';
+import type { PaymentRequirements, PaymentPayload } from '@payai/x402/types';
 import {
   type TokenAsset,
   SOLANA_MAINNET_CAIP2,

@@ -1,4 +1,4 @@
-import type { PaymentRequirements, PaymentRequired } from '@x402/core/types';
+import type { PaymentRequirements, PaymentRequired } from '@payai/x402/types';
 import type { WalletAdapter } from '../types';
 import { isSolanaNetwork } from '../types';
 import { createSolanaPaymentTransaction } from './transaction-builder';

@@ -3,10 +3,10 @@ import type {
   PaymentRequired,
   VerifyResponse,
   SettleResponse,
-} from '@x402/core/types';
+  Network,
+} from '@payai/x402/types';
 import type { X402ServerConfig, RouteConfig, TokenAsset } from '../types';
 import { toCAIP2Network } from '../types';
-import type { Network } from '@x402/core/types';
 import { getDefaultRpcUrl, getDefaultTokenAsset } from '../utils';
 import { FacilitatorClient } from './facilitator-client';
 
@@ -48,18 +48,22 @@ export class X402PaymentHandler {
   }
 
   /**
-   * Extract payment header from request headers
+   * Extract payment header from request headers (v2)
    * Pass in headers object from any framework (Next.js, Express, etc.)
+   *
+   * Note: v2 uses PAYMENT-SIGNATURE header (v1 used X-PAYMENT)
    */
   extractPayment(headers: Record<string, string | string[] | undefined> | Headers): string | null {
     // Handle Headers object (Next.js, Fetch API)
     if (headers instanceof Headers) {
-      return headers.get('X-PAYMENT') || headers.get('x-payment');
+      // v2 header (PAYMENT-SIGNATURE)
+      return headers.get('PAYMENT-SIGNATURE') || headers.get('payment-signature');
     }
 
     // Handle plain object (Express, Fastify, etc.)
-    const xPayment = headers['X-PAYMENT'] || headers['x-payment'];
-    return Array.isArray(xPayment) ? xPayment[0] || null : xPayment || null;
+    // v2 header (PAYMENT-SIGNATURE)
+    const paymentSignature = headers['PAYMENT-SIGNATURE'] || headers['payment-signature'];
+    return Array.isArray(paymentSignature) ? paymentSignature[0] || null : paymentSignature || null;
   }
 
   /**

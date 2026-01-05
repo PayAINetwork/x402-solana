@@ -13,7 +13,7 @@ import {
   TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
 } from '@solana/spl-token';
-import type { PaymentRequirements } from '@x402/core/types';
+import type { PaymentRequirements } from '@payai/x402/types';
 import type { WalletAdapter } from '../types';
 
 // Constants for compute budget

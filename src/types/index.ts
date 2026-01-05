@@ -4,7 +4,7 @@
  */
 
 // ============================================
-// Import types from @x402/core package
+// Import types from @payai/x402 package (v2)
 // ============================================
 export type {
   // Protocol types (v2)
@@ -24,7 +24,7 @@ export type {
   Money,
   Price,
   AssetAmount,
-} from '@x402/core/types';
+} from '@payai/x402/types';
 
 // ============================================
 // SVM payload type (defined locally to avoid @x402/svm dependency)

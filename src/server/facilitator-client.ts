@@ -4,7 +4,7 @@ import type {
   VerifyResponse,
   SettleResponse,
   SupportedResponse,
-} from '@x402/core/types';
+} from '@payai/x402/types';
 import { isSolanaNetwork } from '../types';
 
 /**
