@@ -799,7 +799,7 @@ When a resource requires payment, the server returns a 402 status with this body
       "maxTimeoutSeconds": 300,
       "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
       "extra": {
-        "feePayer": "CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5"
+        "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
       }
     }
   ],
