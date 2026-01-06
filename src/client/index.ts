@@ -1,6 +1,6 @@
-import type { X402ClientConfig } from '../types';
-import { getDefaultRpcUrl } from '../utils';
-import { createPaymentFetch } from './payment-interceptor';
+import type { X402ClientConfig } from "../types";
+import { getDefaultRpcUrl } from "../utils";
+import { createPaymentFetch } from "./payment-interceptor";
 
 /**
  * x402 Solana Client (v2)
@@ -21,7 +21,7 @@ export class X402Client {
       config.wallet,
       rpcUrl,
       config.amount || BigInt(0),
-      config.verbose || false
+      config.verbose || false,
     );
   }
 
@@ -42,4 +42,4 @@ export function createX402Client(config: X402ClientConfig): X402Client {
 }
 
 // Re-export types for convenience
-export type { X402ClientConfig, WalletAdapter } from '../types';
+export type { X402ClientConfig, WalletAdapter } from "../types";

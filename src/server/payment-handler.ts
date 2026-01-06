@@ -3,12 +3,12 @@ import type {
   PaymentRequired,
   VerifyResponse,
   SettleResponse,
-} from '@x402/core/types';
-import type { X402ServerConfig, RouteConfig, TokenAsset } from '../types';
-import { toCAIP2Network } from '../types';
-import type { Network } from '@x402/core/types';
-import { getDefaultRpcUrl, getDefaultTokenAsset } from '../utils';
-import { FacilitatorClient } from './facilitator-client';
+  Network,
+} from "@payai/x402/types";
+import type { X402ServerConfig, RouteConfig, TokenAsset } from "../types";
+import { toCAIP2Network } from "../types";
+import { getDefaultRpcUrl, getDefaultTokenAsset } from "../utils";
+import { FacilitatorClient } from "./facilitator-client";
 
 /**
  * Internal configuration with defaults resolved
@@ -32,7 +32,8 @@ export class X402PaymentHandler {
   private config: InternalConfig;
 
   constructor(config: X402ServerConfig) {
-    const defaultToken = config.defaultToken || getDefaultTokenAsset(config.network);
+    const defaultToken =
+      config.defaultToken || getDefaultTokenAsset(config.network);
 
     this.config = {
       network: toCAIP2Network(config.network),
@@ -40,7 +41,7 @@ export class X402PaymentHandler {
       facilitatorUrl: config.facilitatorUrl,
       rpcUrl: config.rpcUrl || getDefaultRpcUrl(config.network),
       defaultToken,
-      defaultDescription: config.defaultDescription || 'Payment required',
+      defaultDescription: config.defaultDescription || "Payment required",
       defaultTimeoutSeconds: config.defaultTimeoutSeconds || 300,
     };
 
@@ -48,18 +49,29 @@ export class X402PaymentHandler {
   }
 
   /**
-   * Extract payment header from request headers
+   * Extract payment header from request headers (v2)
    * Pass in headers object from any framework (Next.js, Express, etc.)
+   *
+   * Note: v2 uses PAYMENT-SIGNATURE header (v1 used X-PAYMENT)
    */
-  extractPayment(headers: Record<string, string | string[] | undefined> | Headers): string | null {
+  extractPayment(
+    headers: Record<string, string | string[] | undefined> | Headers,
+  ): string | null {
     // Handle Headers object (Next.js, Fetch API)
     if (headers instanceof Headers) {
-      return headers.get('X-PAYMENT') || headers.get('x-payment');
+      // v2 header (PAYMENT-SIGNATURE)
+      return (
+        headers.get("PAYMENT-SIGNATURE") || headers.get("payment-signature")
+      );
     }
 
     // Handle plain object (Express, Fastify, etc.)
-    const xPayment = headers['X-PAYMENT'] || headers['x-payment'];
-    return Array.isArray(xPayment) ? xPayment[0] || null : xPayment || null;
+    // v2 header (PAYMENT-SIGNATURE)
+    const paymentSignature =
+      headers["PAYMENT-SIGNATURE"] || headers["payment-signature"];
+    return Array.isArray(paymentSignature)
+      ? paymentSignature[0] || null
+      : paymentSignature || null;
   }
 
   /**
@@ -71,22 +83,25 @@ export class X402PaymentHandler {
    */
   async createPaymentRequirements(
     routeConfig: RouteConfig,
-    resourceUrl: string
+    resourceUrl: string,
   ): Promise<PaymentRequirements> {
     // Get fee payer from facilitator
-    const feePayer = await this.facilitatorClient.getFeePayer(this.config.network);
+    const feePayer = await this.facilitatorClient.getFeePayer(
+      this.config.network,
+    );
 
     const paymentRequirements: PaymentRequirements = {
-      scheme: 'exact',
+      scheme: "exact",
       network: this.config.network as Network,
       amount: routeConfig.amount,
       payTo: this.config.treasuryAddress,
-      maxTimeoutSeconds: routeConfig.maxTimeoutSeconds || this.config.defaultTimeoutSeconds,
+      maxTimeoutSeconds:
+        routeConfig.maxTimeoutSeconds || this.config.defaultTimeoutSeconds,
       asset: routeConfig.asset.address,
       extra: {
         feePayer,
         description: routeConfig.description || this.config.defaultDescription,
-        mimeType: routeConfig.mimeType || 'application/json',
+        mimeType: routeConfig.mimeType || "application/json",
         resource: resourceUrl,
       },
     };
@@ -103,7 +118,7 @@ export class X402PaymentHandler {
    */
   create402Response(
     requirements: PaymentRequirements,
-    resourceUrl: string
+    resourceUrl: string,
   ): {
     status: 402;
     body: PaymentRequired;
@@ -114,11 +129,12 @@ export class X402PaymentHandler {
         x402Version: 2,
         resource: {
           url: resourceUrl,
-          description: (requirements.extra?.description as string) || '',
-          mimeType: (requirements.extra?.mimeType as string) || 'application/json',
+          description: (requirements.extra?.description as string) || "",
+          mimeType:
+            (requirements.extra?.mimeType as string) || "application/json",
         },
         accepts: [requirements],
-        error: 'Payment required',
+        error: "Payment required",
       },
     };
   }
@@ -129,9 +145,12 @@ export class X402PaymentHandler {
    */
   async verifyPayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements
+    paymentRequirements: PaymentRequirements,
   ): Promise<VerifyResponse> {
-    return this.facilitatorClient.verifyPayment(paymentHeader, paymentRequirements);
+    return this.facilitatorClient.verifyPayment(
+      paymentHeader,
+      paymentRequirements,
+    );
   }
 
   /**
@@ -140,9 +159,12 @@ export class X402PaymentHandler {
    */
   async settlePayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements
+    paymentRequirements: PaymentRequirements,
   ): Promise<SettleResponse> {
-    return this.facilitatorClient.settlePayment(paymentHeader, paymentRequirements);
+    return this.facilitatorClient.settlePayment(
+      paymentHeader,
+      paymentRequirements,
+    );
   }
 
   /**

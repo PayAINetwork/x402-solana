@@ -14,6 +14,6 @@ export default defineConfig({
   clean: true,
   splitting: false,
   minify: false,
-  external: ['@solana/web3.js', '@solana/spl-token', 'zod', 'x402'],
+  external: ['@solana/web3.js', '@solana/spl-token', 'zod', '@payai/x402'],
   treeshake: true,
 });

@@ -3,8 +3,8 @@
  * Server-side payment handling (framework agnostic)
  */
 
-export * from './payment-handler';
-export * from './facilitator-client';
+export * from "./payment-handler";
+export * from "./facilitator-client";
 
 // Re-export types for convenience
 export type {
@@ -15,4 +15,4 @@ export type {
   PaymentRequired,
   VerifyResponse,
   SettleResponse,
-} from '../types';
+} from "../types";

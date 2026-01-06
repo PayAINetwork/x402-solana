@@ -4,7 +4,7 @@ A reusable, framework-agnostic implementation of the x402 payment protocol v2 fo
 
 ## Features
 
-✅ **x402 Protocol v2** - Full support for the latest x402 specification  
+✅ **x402 Protocol v2** - Full support for the latest x402 v2 specification  
 ✅ **CAIP-2 Networks** - Uses standardized chain identifiers (`solana:chainId`)  
 ✅ **Client-side** - Automatic 402 payment handling with any wallet provider  
 ✅ **Server-side** - Payment verification and settlement with facilitator  
@@ -16,33 +16,32 @@ A reusable, framework-agnostic implementation of the x402 payment protocol v2 fo
 ## Installation
 
 ```bash
-pnpm add @payai/x402-solana
+pnpm add x402-solana
 ```
 
 Or with npm:
 
 ```bash
-npm install @payai/x402-solana
+npm install x402-solana
 ```
 
 Or with yarn:
 
 ```bash
-yarn add @payai/x402-solana
+yarn add x402-solana
 ```
 
-## x402 v2 Protocol Changes
+## x402 Protocol v2
 
-This package implements x402 protocol v2. Key changes from v1:
+This package implements x402 protocol v2. Key features:
 
-| Feature               | v1                                 | v2                                        |
-| --------------------- | ---------------------------------- | ----------------------------------------- |
-| **Network Format**    | Simple (`solana`, `solana-devnet`) | CAIP-2 (`solana:chainId`)                 |
-| **Payment Header**    | `X-PAYMENT`                        | `PAYMENT-SIGNATURE`                       |
-| **Amount Field**      | `maxAmountRequired`                | `amount`                                  |
-| **Payload Structure** | Flat                               | Includes `resource` and `accepted` fields |
-
-The library handles network format conversion automatically - you can use simple names in your configuration.
+| Feature               | v2 Specification                                  |
+| --------------------- | ------------------------------------------------- |
+| **Network Format**    | CAIP-2 (`solana:chainId`)                         |
+| **Payment Header**    | `PAYMENT-SIGNATURE`                               |
+| **Amount Field**      | `amount`                                          |
+| **Payload Structure** | Includes `resource` and `accepted` fields         |
+| **Response Body**     | `PaymentRequired` with `x402Version: 2`           |
 
 ## Usage
 
@@ -102,7 +101,7 @@ export default function App({ Component, pageProps }) {
 Use in your component:
 
 ```typescript
-import { createX402Client } from '@payai/x402-solana/client';
+import { createX402Client } from 'x402-solana/client';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 
@@ -115,7 +114,7 @@ function MyComponent() {
       return;
     }
 
-    // Create x402 client
+    // Create x402 client (v2)
     const client = createX402Client({
       wallet: {
         address: wallet.publicKey.toString(),
@@ -152,14 +151,14 @@ function MyComponent() {
 #### Option 2: Using Privy
 
 ```typescript
-import { createX402Client } from '@payai/x402-solana/client';
+import { createX402Client } from 'x402-solana/client';
 import { useSolanaWallets } from '@privy-io/react-auth/solana';
 
 function MyComponent() {
   const { wallets } = useSolanaWallets();
   const wallet = wallets[0];
 
-  // Create x402 client
+  // Create x402 client (v2)
   const client = createX402Client({
     wallet,
     network: 'solana-devnet',
@@ -181,7 +180,7 @@ function MyComponent() {
 If you're making requests from a browser to external APIs and encountering CORS issues, you can provide a custom fetch function that routes requests through your proxy server:
 
 ```typescript
-import { createX402Client } from '@payai/x402-solana/client';
+import { createX402Client } from 'x402-solana/client';
 import { useWallet } from '@solana/wallet-adapter-react';
 
 function MyComponent() {
@@ -224,7 +223,7 @@ function MyComponent() {
       return;
     }
 
-    // Create x402 client with custom fetch
+    // Create x402 client with custom fetch (v2)
     const client = createX402Client({
       wallet: {
         address: wallet.publicKey.toString(),
@@ -283,10 +282,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'url and method required' }, { status: 400 });
     }
 
-    // Prepare headers (preserve x402 payment headers)
+    // Prepare headers (preserve x402 v2 payment headers)
     const requestHeaders: Record<string, string> = {
       'Content-Type': headers?.['Content-Type'] || 'application/json',
-      'User-Agent': 'x402-solana-proxy/1.0',
+      'User-Agent': 'x402-solana-proxy/2.0',
       ...(headers || {}),
     };
 
@@ -406,7 +405,7 @@ app.post('/api/proxy', async (req, res) => {
       }
     });
 
-    // Return 200 with real status in body for x402 compatibility
+    // Return 200 with real status in body for x402 v2 compatibility
     res.status(200).json({
       status: response.status,
       statusText: response.statusText,
@@ -429,15 +428,15 @@ app.listen(3001, () => console.log('Proxy server running on port 3001'));
 **Key Points:**
 
 - Always return HTTP 200 from proxy, with real status code in the response body
-- This is critical for x402 402 Payment Required responses to work correctly
-- Preserve x402 headers (`PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`)
+- This is critical for x402 v2 402 Payment Required responses to work correctly
+- Preserve x402 v2 headers (`PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`)
 - Remove problematic headers (`host`, `content-length`)
 
 ### Server Side (Next.js API Route)
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
-import { X402PaymentHandler } from '@payai/x402-solana/server';
+import { X402PaymentHandler } from 'x402-solana/server';
 
 const x402 = new X402PaymentHandler({
   network: 'solana-devnet', // Simple format - automatically converted to CAIP-2
@@ -451,10 +450,10 @@ export async function POST(req: NextRequest) {
   // 1. Extract payment header (v2 uses PAYMENT-SIGNATURE)
   const paymentHeader = x402.extractPayment(req.headers);
 
-  // 2. Create payment requirements
+  // 2. Create payment requirements (v2 format)
   const paymentRequirements = await x402.createPaymentRequirements(
     {
-      amount: '2500000', // $2.50 USDC (in micro-units, as string)
+      amount: '2500000', // $2.50 USDC (in atomic units, as string)
       asset: {
         address: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', // USDC devnet
         decimals: 6,
@@ -500,7 +499,7 @@ export async function POST(req: NextRequest) {
 
 ```typescript
 import express from 'express';
-import { X402PaymentHandler } from '@payai/x402-solana/server';
+import { X402PaymentHandler } from 'x402-solana/server';
 
 const app = express();
 const x402 = new X402PaymentHandler({
@@ -593,8 +592,8 @@ Creates a new payment handler instance.
 **Methods:**
 
 - `extractPayment(headers)` - Extract PAYMENT-SIGNATURE header from request
-- `createPaymentRequirements(routeConfig, resourceUrl)` - Create payment requirements object
-- `create402Response(requirements, resourceUrl)` - Create 402 response body (v2 format)
+- `createPaymentRequirements(routeConfig, resourceUrl)` - Create v2 payment requirements object
+- `create402Response(requirements, resourceUrl)` - Create v2 402 response body
 - `verifyPayment(header, requirements)` - Verify payment with facilitator
 - `settlePayment(header, requirements)` - Settle payment with facilitator
 - `getNetwork()` - Get the network in CAIP-2 format
@@ -639,7 +638,7 @@ import {
   isSolanaNetwork,
   isSolanaMainnet,
   isSolanaDevnet,
-} from '@payai/x402-solana/types';
+} from 'x402-solana/types';
 
 // Convert between formats
 const caip2 = toCAIP2Network('solana-devnet'); // 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
@@ -762,19 +761,79 @@ const walletAdapter = {
 
 ## Payment Amounts
 
-Payment amounts are in USDC micro-units (6 decimals) as **strings**:
+Payment amounts are in USDC atomic units (6 decimals) as **strings**:
 
-- 1 USDC = `"1000000"` micro-units
-- $0.01 = `"10000"` micro-units
-- $2.50 = `"2500000"` micro-units
+- 1 USDC = `"1000000"` atomic units
+- $0.01 = `"10000"` atomic units
+- $2.50 = `"2500000"` atomic units
 
 **Helper functions:**
 
 ```typescript
-import { toAtomicUnits, fromAtomicUnits } from '@payai/x402-solana/utils';
+import { toAtomicUnits, fromAtomicUnits } from 'x402-solana/utils';
 
-const microUnits = toAtomicUnits(2.5, 6); // "2500000"
+const atomicUnits = toAtomicUnits(2.5, 6); // "2500000"
 const usd = fromAtomicUnits('2500000', 6); // 2.5
+```
+
+## Protocol Details
+
+### PaymentRequired Response (v2)
+
+When a resource requires payment, the server returns a 402 status with this body:
+
+```json
+{
+  "x402Version": 2,
+  "resource": {
+    "url": "https://api.example.com/v1/ai/generate",
+    "description": "AI text generation",
+    "mimeType": "application/json"
+  },
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+      "amount": "2500000",
+      "payTo": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHEBg4",
+      "maxTimeoutSeconds": 300,
+      "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      "extra": {
+        "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+      }
+    }
+  ],
+  "error": "Payment required"
+}
+```
+
+### PaymentPayload (v2)
+
+The client sends payment via `PAYMENT-SIGNATURE` header containing base64-encoded JSON:
+
+```json
+{
+  "x402Version": 2,
+  "resource": {
+    "url": "https://api.example.com/v1/ai/generate",
+    "description": "AI text generation",
+    "mimeType": "application/json"
+  },
+  "accepted": {
+    "scheme": "exact",
+    "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    "amount": "2500000",
+    "payTo": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHEBg4",
+    "maxTimeoutSeconds": 300,
+    "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    "extra": {
+      "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+    }
+  },
+  "payload": {
+    "transaction": "<base64-encoded-signed-transaction>"
+  }
+}
 ```
 
 ## Testing
@@ -842,18 +901,6 @@ npm run typecheck
 npm run build
 ```
 
-## Migration from v0.1.x
-
-See [CHANGELOG.md](./CHANGELOG.md) for detailed migration guide.
-
-**Quick migration steps:**
-
-1. **Update package**: Install the new version
-2. **Network format**: The library handles CAIP-2 conversion automatically - no code changes needed
-3. **Amount field**: Update `maxAmountRequired` to `amount` if you were using it directly
-4. **Headers**: The client now sends `PAYMENT-SIGNATURE` instead of `X-PAYMENT`
-5. **Facilitator**: Ensure your facilitator supports x402 v2 endpoints
-
 ## Future Enhancements
 
 - [ ] Add @solana/kit adapter for AI agents
@@ -881,6 +928,4 @@ Built on top of:
 
 ## Version
 
-Current version: `1.0.0-canary.1` (x402 Protocol v2)
-
-**Note:** This is a canary release for x402 v2. The API is stabilizing but may have minor changes before the stable 1.0.0 release.
+Current version: `2.0.0` (x402 Protocol v2)

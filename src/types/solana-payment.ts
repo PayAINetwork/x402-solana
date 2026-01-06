@@ -1,5 +1,5 @@
-import type { VersionedTransaction } from '@solana/web3.js';
-import type { SolanaNetworkSimple } from './x402-protocol';
+import type { VersionedTransaction } from "@solana/web3.js";
+import type { SolanaNetworkSimple } from "./x402-protocol";
 
 /**
  * Solana-specific payment types (v2)
