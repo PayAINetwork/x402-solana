@@ -1,5 +1,5 @@
 import type { PaymentRequirements, PaymentRequired } from "@payai/x402/types";
-import { safeBase64Decode } from "@payai/x402/shared";
+import { safeBase64Decode } from "@payai/x402/utils";
 import type { WalletAdapter } from "../types";
 import { isSolanaNetwork } from "../types";
 import { createSolanaPaymentTransaction } from "./transaction-builder";
