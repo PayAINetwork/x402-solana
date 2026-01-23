@@ -1,6 +1,6 @@
 {
   "name": "x402-solana",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A framework-agnostic implementation of the x402 payment protocol v2 for Solana clients (browsers) and servers",
   "keywords": [
     "x402",
