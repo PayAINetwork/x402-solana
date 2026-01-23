@@ -1,6 +1,6 @@
 {
   "name": "x402-solana",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A framework-agnostic implementation of the x402 payment protocol v2 for Solana clients (browsers) and servers",
   "keywords": [
     "x402",
@@ -89,7 +89,7 @@
   "packageManager": "pnpm@10.27.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/payainetwork/x402-solana.git"
+    "url": "git+https://github.com/PayAINetwork/x402-solana.git"
   },
   "homepage": "https://github.com/payainetwork/x402-solana",
   "bugs": {

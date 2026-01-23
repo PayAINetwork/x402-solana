@@ -4,17 +4,13 @@
  */
 
 import { createX402Client } from '../src/client';
-import type { WalletAdapter } from '../src/types';
-import { VersionedTransaction } from '@solana/web3.js';
-
-// Mock wallet adapter for testing
-const mockWallet: WalletAdapter = {
-  address: 'TestWalletAddress123456789',
-  publicKey: {
-    toString: () => 'TestWalletAddress123456789',
-  },
-  signTransaction: async (tx: VersionedTransaction) => tx,
-};
+import {
+  mockWallet,
+  createMockWallet,
+  createSuccessResponse,
+  createV1PaymentRequiredResponse,
+  createV2PaymentRequiredResponse,
+} from './fixtures';
 
 describe('CustomFetch', () => {
   describe('Default behavior (no customFetch)', () => {
@@ -43,14 +39,8 @@ describe('CustomFetch', () => {
 
   describe('Custom fetch behavior', () => {
     it('should accept customFetch parameter', () => {
-      const customFetch = async (
-        url: string | RequestInfo,
-        init?: RequestInit
-      ): Promise<Response> => {
-        return new Response(JSON.stringify({ mock: 'response' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+      const customFetch = async (): Promise<Response> => {
+        return createSuccessResponse({ mock: 'response' });
       };
 
       const client = createX402Client({
@@ -77,10 +67,7 @@ describe('CustomFetch', () => {
         capturedInit = init;
 
         // Return a non-402 response to avoid payment flow
-        return new Response(JSON.stringify({ success: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return createSuccessResponse();
       };
 
       const client = createX402Client({
@@ -107,17 +94,14 @@ describe('CustomFetch', () => {
       let capturedBody: BodyInit | undefined;
 
       const customFetch = async (
-        url: string | RequestInfo,
+        _url: string | RequestInfo,
         init?: RequestInit
       ): Promise<Response> => {
         capturedMethod = init?.method;
         capturedHeaders = init?.headers;
         capturedBody = init?.body;
 
-        return new Response(JSON.stringify({ success: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return createSuccessResponse();
       };
 
       const client = createX402Client({
@@ -144,25 +128,17 @@ describe('CustomFetch', () => {
       // Simulate a proxy fetch that transforms the request
       const proxyFetch = async (
         url: string | RequestInfo,
-        init?: RequestInit
+        _init?: RequestInit
       ): Promise<Response> => {
-        // In a real scenario, this would call a proxy server
-        // Here we just verify the proxy pattern works
-        const proxyUrl = 'http://localhost:3001/api/proxy';
-
         // Simulate proxy request/response
-        const mockProxyResponse = {
-          status: 200,
-          statusText: 'OK',
-          headers: { 'Content-Type': 'application/json' },
-          data: { proxied: true, originalUrl: url },
-        };
-
-        return new Response(JSON.stringify(mockProxyResponse.data), {
-          status: mockProxyResponse.status,
-          statusText: mockProxyResponse.statusText,
-          headers: new Headers(mockProxyResponse.headers),
-        });
+        return new Response(
+          JSON.stringify({ proxied: true, originalUrl: url }),
+          {
+            status: 200,
+            statusText: 'OK',
+            headers: new Headers({ 'Content-Type': 'application/json' }),
+          }
+        );
       };
 
       const client = createX402Client({
@@ -185,10 +161,7 @@ describe('CustomFetch', () => {
         'Content-Type': 'application/json',
       };
 
-      const proxyFetch = async (
-        url: string | RequestInfo,
-        init?: RequestInit
-      ): Promise<Response> => {
+      const proxyFetch = async (): Promise<Response> => {
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: new Headers(customHeaders),
@@ -211,10 +184,7 @@ describe('CustomFetch', () => {
   describe('Type safety', () => {
     it('should enforce typeof fetch signature for customFetch', () => {
       // This is a compile-time test - if it compiles, the type is correct
-      const validCustomFetch: typeof fetch = async (
-        url: string | RequestInfo,
-        init?: RequestInit
-      ) => {
+      const validCustomFetch: typeof fetch = async () => {
         return new Response('', { status: 200 });
       };
 
@@ -225,6 +195,125 @@ describe('CustomFetch', () => {
       });
 
       expect(client).toBeDefined();
+    });
+  });
+
+  describe('Client configuration', () => {
+    it('should accept custom wallet', () => {
+      const customWallet = createMockWallet('CustomWalletAddress1234567890123456');
+
+      const client = createX402Client({
+        wallet: customWallet,
+        network: 'solana-devnet',
+      });
+
+      expect(client).toBeDefined();
+    });
+
+    it('should accept mainnet network', () => {
+      const client = createX402Client({
+        wallet: mockWallet,
+        network: 'solana',
+      });
+
+      expect(client).toBeDefined();
+    });
+
+    it('should accept custom RPC URL', () => {
+      const client = createX402Client({
+        wallet: mockWallet,
+        network: 'solana-devnet',
+        rpcUrl: 'https://custom-rpc.example.com',
+      });
+
+      expect(client).toBeDefined();
+    });
+
+    it('should accept verbose flag', () => {
+      const client = createX402Client({
+        wallet: mockWallet,
+        network: 'solana-devnet',
+        verbose: true,
+      });
+
+      expect(client).toBeDefined();
+    });
+
+    it('should accept amount limit', () => {
+      const client = createX402Client({
+        wallet: mockWallet,
+        network: 'solana-devnet',
+        amount: BigInt(1000000),
+      });
+
+      expect(client).toBeDefined();
+    });
+  });
+
+  describe('Payment flow integration', () => {
+    it('should not retry for 200 responses', async () => {
+      let requestCount = 0;
+
+      const customFetch = async (): Promise<Response> => {
+        requestCount++;
+        return createSuccessResponse({ data: 'success' });
+      };
+
+      const client = createX402Client({
+        wallet: mockWallet,
+        network: 'solana-devnet',
+        customFetch,
+      });
+
+      await client.fetch('https://test-api.com/endpoint');
+
+      expect(requestCount).toBe(1);
+    });
+
+    it('should not retry for 4xx responses other than 402', async () => {
+      let requestCount = 0;
+
+      const customFetch = async (): Promise<Response> => {
+        requestCount++;
+        return new Response(JSON.stringify({ error: 'Not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const client = createX402Client({
+        wallet: mockWallet,
+        network: 'solana-devnet',
+        customFetch,
+      });
+
+      const response = await client.fetch('https://test-api.com/endpoint');
+
+      expect(requestCount).toBe(1);
+      expect(response.status).toBe(404);
+    });
+
+    it('should not retry for 5xx responses', async () => {
+      let requestCount = 0;
+
+      const customFetch = async (): Promise<Response> => {
+        requestCount++;
+        return new Response(JSON.stringify({ error: 'Server error' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const client = createX402Client({
+        wallet: mockWallet,
+        network: 'solana-devnet',
+        customFetch,
+      });
+
+      const response = await client.fetch('https://test-api.com/endpoint');
+
+      expect(requestCount).toBe(1);
+      expect(response.status).toBe(500);
     });
   });
 });
