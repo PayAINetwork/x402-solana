@@ -17,12 +17,12 @@ const USDC_DEVNET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 /**
  * Create v2 payment payload from a signed transaction
- * Encodes transaction and payment details for X-PAYMENT header
+ * Encodes transaction and payment details for PAYMENT-SIGNATURE header
  *
  * @param transaction - Signed Solana VersionedTransaction
  * @param paymentRequirements - The accepted payment requirements
  * @param resourceUrl - URL of the protected resource
- * @returns Base64-encoded payment payload for X-PAYMENT header
+ * @returns Base64-encoded payment payload for PAYMENT-SIGNATURE header
  */
 export function createPaymentPayload(
   transaction: VersionedTransaction,
@@ -44,6 +44,37 @@ export function createPaymentPayload(
         (paymentRequirements.extra?.mimeType as string) || "application/json",
     },
     accepted: paymentRequirements,
+    payload: {
+      transaction: base64Transaction,
+    },
+  };
+
+  // Encode payment payload as base64 for PAYMENT-SIGNATURE header
+  const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
+
+  return paymentHeader;
+}
+
+/**
+ * Create v1 payment payload from a signed transaction
+ * Encodes transaction for X-PAYMENT header (v1 format)
+ *
+ * @param transaction - Signed Solana VersionedTransaction
+ * @param paymentRequirements - The accepted payment requirements
+ * @returns Base64-encoded payment payload for X-PAYMENT header
+ */
+export function createPaymentPayloadV1(
+  transaction: VersionedTransaction,
+  paymentRequirements: PaymentRequirements
+): string {
+  // Serialize the signed transaction to base64
+  const base64Transaction = Buffer.from(transaction.serialize()).toString('base64');
+
+  // Create v1 payment payload (simpler format)
+  const paymentPayload = {
+    x402Version: 1,
+    scheme: paymentRequirements.scheme,
+    network: paymentRequirements.network,
     payload: {
       transaction: base64Transaction,
     },
