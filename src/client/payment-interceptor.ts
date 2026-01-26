@@ -1,14 +1,23 @@
 import type { PaymentRequirements, PaymentRequired } from "@payai/x402/types";
+import { safeBase64Decode } from "@payai/x402/utils";
 import type { WalletAdapter } from "../types";
 import { isSolanaNetwork } from "../types";
 import { createSolanaPaymentTransaction } from "./transaction-builder";
-import { createPaymentPayload } from "../utils";
+import { createPaymentPayload, createPaymentPayloadV1 } from "../utils";
 
 /**
- * x402 Response structure (v2)
+ * x402 Response structure (v1 body format)
  */
-interface X402Response extends PaymentRequired {
+interface X402ResponseV1 extends PaymentRequired {
   accepts: PaymentRequirements[];
+}
+
+/**
+ * Decode a base64-encoded PAYMENT-REQUIRED header
+ */
+function decodePaymentRequiredHeader(header: string): PaymentRequired {
+  const decoded = safeBase64Decode(header);
+  return JSON.parse(decoded) as PaymentRequired;
 }
 
 /**
@@ -48,11 +57,30 @@ export function createPaymentFetch(
     log("Got 402, parsing payment requirements...");
 
     // Parse payment requirements from 402 response
-    const rawResponse = (await response.json()) as X402Response;
-    log("Payment requirements:", JSON.stringify(rawResponse, null, 2));
+    // v2: Read from PAYMENT-REQUIRED header (base64-encoded)
+    // v1 fallback: Read from response body
+    let paymentRequired: PaymentRequired;
+    let protocolVersion: 1 | 2;
+
+    const paymentRequiredHeader = response.headers.get("PAYMENT-REQUIRED");
+    if (paymentRequiredHeader) {
+      // v2: Decode from header
+      log("Found PAYMENT-REQUIRED header (v2 protocol)");
+      paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader);
+      protocolVersion = 2;
+    } else {
+      // v1 fallback: Parse from body
+      log("No PAYMENT-REQUIRED header, falling back to body (v1 protocol)");
+      const rawResponse = (await response.json()) as X402ResponseV1;
+      paymentRequired = rawResponse;
+      protocolVersion = 1;
+    }
+
+    log("Payment requirements:", JSON.stringify(paymentRequired, null, 2));
+    log("Protocol version:", protocolVersion);
 
     const parsedPaymentRequirements: PaymentRequirements[] =
-      rawResponse.accepts || [];
+      paymentRequired.accepts || [];
 
     // Select first suitable payment requirement for Solana
     // Supports both simple format ("solana", "solana-devnet") and CAIP-2 format ("solana:chainId")
@@ -95,24 +123,40 @@ export function createPaymentFetch(
     );
     log("Transaction signed successfully");
 
-    // Create v2 payment payload with resource and accepted fields
-    const paymentHeader = createPaymentPayload(
-      signedTransaction,
-      selectedRequirements,
-      resourceUrl,
-    );
-    log("Payment header created, length:", paymentHeader.length);
+    // Create payment payload based on protocol version
+    let paymentHeader: string;
+    let headerName: string;
 
-    // Retry with V2 payment header
+    if (protocolVersion === 2) {
+      // v2: Use PAYMENT-SIGNATURE header with full payload
+      paymentHeader = createPaymentPayload(
+        signedTransaction,
+        selectedRequirements,
+        resourceUrl,
+      );
+      headerName = "PAYMENT-SIGNATURE";
+    } else {
+      // v1: Use X-PAYMENT header with simpler payload
+      paymentHeader = createPaymentPayloadV1(
+        signedTransaction,
+        selectedRequirements,
+      );
+      headerName = "X-PAYMENT";
+    }
+
+    log("Payment header created, length:", paymentHeader.length);
+    log("Using header:", headerName);
+
+    // Retry with appropriate payment header
     const newInit = {
       ...init,
       headers: {
         ...(init?.headers || {}),
-        "PAYMENT-SIGNATURE": paymentHeader,
+        [headerName]: paymentHeader,
       },
     };
 
-    log("Retrying request with PAYMENT-SIGNATURE header...");
+    log(`Retrying request with ${headerName} header...`);
     const retryResponse = await fetchFn(input, newInit);
     log("Retry response status:", retryResponse.status);
 
