@@ -72,7 +72,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+
+      - name: Configure npm for Trusted Publishing (OIDC)
+        run: |
+          # Ensure we're not using any lingering token-based auth config.
+          # OIDC Trusted Publishing uses GitHub's OIDC env vars (ACTIONS_ID_TOKEN_*) instead.
+          rm -f ~/.npmrc
+          npm config set registry https://registry.npmjs.org/
 
       - name: Setup npm cache
         uses: actions/cache@v4
