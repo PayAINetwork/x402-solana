@@ -89,7 +89,7 @@
   "packageManager": "pnpm@10.27.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/payainetwork/x402-solana.git"
+    "url": "git+https://github.com/PayAINetwork/x402-solana.git"
   },
   "homepage": "https://github.com/payainetwork/x402-solana",
   "bugs": {
