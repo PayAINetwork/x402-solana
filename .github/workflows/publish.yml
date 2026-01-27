@@ -135,8 +135,8 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
         run: |
           echo "🔍 DRY RUN MODE - Skipping actual publish"
-          npm publish --access public --provenance --dry-run
+          npm publish --access public --dry-run
 
       - name: Publish to npm
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run == 'false'
-        run: npm publish --access public --provenance
+        run: npm publish --access public
