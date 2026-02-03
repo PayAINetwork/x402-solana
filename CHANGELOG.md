@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.3
+
+### Patch Changes
+
+- Bump `@payai/x402` dependency from `2.0.0-payai.6` to `^2.2.1` to resolve peer dependency conflicts with other `@payai/*` packages
+
 ## 2.0.2
 
 ### Patch Changes
