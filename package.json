@@ -59,7 +59,10 @@
     "clean": "rm -rf dist",
     "test": "jest",
     "test:watch": "jest --watch",
-    "prepublishOnly": "npm run clean && npm run build && npm run typecheck"
+    "prepublishOnly": "npm run clean && npm run build && npm run typecheck",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "npm run build && changeset publish"
   },
   "dependencies": {
     "@payai/x402": "2.0.0-payai.6",
@@ -72,6 +75,8 @@
     "@solana/web3.js": ">=1.98.4"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.0.3",
     "@typescript-eslint/eslint-plugin": "^8.51.0",
