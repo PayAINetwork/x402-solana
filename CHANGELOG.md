@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.2
+
+### Patch Changes
+
+- [#26](https://github.com/PayAINetwork/x402-solana/pull/26) [`160a799`](https://github.com/PayAINetwork/x402-solana/commit/160a79965a486650a949528cf68b211d7d4731bf) Thanks [@notorious-d-e-v](https://github.com/notorious-d-e-v)! - Bump DEFAULT_COMPUTE_UNIT_LIMIT from 7,000 to 20,000 to provide more headroom for SPL token transfers
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -50,12 +56,12 @@ This release upgrades to x402 protocol v2. This is a breaking change from v0.1.x
 
 ```typescript
 // Before
-import { createX402Client } from 'x402-solana/client';
-import { X402PaymentHandler } from 'x402-solana/server';
+import { createX402Client } from "x402-solana/client";
+import { X402PaymentHandler } from "x402-solana/server";
 
 // After (v2 - same package name, new API)
-import { createX402Client } from 'x402-solana/client';
-import { X402PaymentHandler } from 'x402-solana/server';
+import { createX402Client } from "x402-solana/client";
+import { X402PaymentHandler } from "x402-solana/server";
 ```
 
 #### 2. Network Configuration (No changes needed)
@@ -64,10 +70,10 @@ The library handles CAIP-2 conversion internally. Your existing simple network n
 
 ```typescript
 // Still works - library converts to CAIP-2 internally
-network: 'solana-devnet';
+network: "solana-devnet";
 
 // Also works - direct CAIP-2 format
-network: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1';
+network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 ```
 
 #### 3. Server API Changes
@@ -77,20 +83,20 @@ The `createPaymentRequirements()` and `create402Response()` methods now require 
 ```typescript
 // Before
 const requirements = await x402.createPaymentRequirements({
-  price: { amount: '1000000', asset: { address: '...' } },
-  network: 'solana-devnet',
-  config: { description: 'API', resource: url },
+  price: { amount: "1000000", asset: { address: "..." } },
+  network: "solana-devnet",
+  config: { description: "API", resource: url },
 });
 const response = x402.create402Response(requirements);
 
 // After
 const requirements = await x402.createPaymentRequirements(
   {
-    amount: '1000000',
-    asset: { address: '...', decimals: 6 },
-    description: 'API',
+    amount: "1000000",
+    asset: { address: "...", decimals: 6 },
+    description: "API",
   },
-  resourceUrl
+  resourceUrl,
 ); // resourceUrl as second parameter
 const response = x402.create402Response(requirements, resourceUrl);
 ```
@@ -100,12 +106,12 @@ const response = x402.create402Response(requirements, resourceUrl);
 ```typescript
 // Before
 {
-  maxAmountRequired: '1000000';
+  maxAmountRequired: "1000000";
 }
 
 // After
 {
-  amount: '1000000';
+  amount: "1000000";
 }
 ```
 
@@ -115,14 +121,14 @@ const response = x402.create402Response(requirements, resourceUrl);
 // Before
 createX402Client({
   wallet,
-  network: 'solana-devnet',
+  network: "solana-devnet",
   maxPaymentAmount: BigInt(10_000_000),
 });
 
 // After
 createX402Client({
   wallet,
-  network: 'solana-devnet',
+  network: "solana-devnet",
   amount: BigInt(10_000_000), // renamed from maxPaymentAmount
   verbose: false, // new option for debug logging
 });
