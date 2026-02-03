@@ -1,20 +1,12 @@
-name: Publish Package
+name: Release
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Dry run (skip actual publish)'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   test:
@@ -52,21 +44,19 @@ jobs:
       - name: Build package
         run: npm run build
 
-  publish:
+  release:
+    name: Release
     needs: test
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
+      pull-requests: write
       packages: write
       id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          # Fetch full history for version bumping
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -91,49 +81,15 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Configure Git
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-
-      - name: Check if version should be bumped
-        id: version-check
-        run: |
-          # Get the current version and package name from package.json
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
-          echo "current-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          
-          # Check if this version already exists on npm
-          if npm view $PACKAGE_NAME@$CURRENT_VERSION > /dev/null 2>&1; then
-            echo "version-exists=true" >> $GITHUB_OUTPUT
-            echo "Version $CURRENT_VERSION already exists on npm"
-          else
-            echo "version-exists=false" >> $GITHUB_OUTPUT
-            echo "Version $CURRENT_VERSION does not exist on npm"
-          fi
-
-      - name: Bump version
-        if: steps.version-check.outputs.version-exists == 'true'
-        run: |
-          # If the current version exists, bump the patch version
-          npm version patch --no-git-tag-version
-          NEW_VERSION=$(node -p "require('./package.json').version")
-          echo "Bumped version to $NEW_VERSION"
-
-      - name: Commit version bump
-        if: steps.version-check.outputs.version-exists == 'true' && (github.event.inputs.dry_run != 'true' || github.event_name != 'workflow_dispatch')
-        run: |
-          git add package.json
-          git commit -m "chore: bump version for release [skip ci]"
-          git push
-
-      - name: Publish to npm (dry run)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
-        run: |
-          echo "🔍 DRY RUN MODE - Skipping actual publish"
-          npm publish --access public --dry-run
-
-      - name: Publish to npm
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run == 'false'
-        run: npm publish --access public
+      - name: Create Release PR or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          title: 'chore: version packages'
+          commit: 'chore: version packages'
+          publish: npm publish --access public --provenance
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
