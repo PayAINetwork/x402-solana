@@ -17,7 +17,7 @@ import type { PaymentRequirements } from "@payai/x402/types";
 import type { WalletAdapter } from "../types";
 
 // Constants for compute budget
-const DEFAULT_COMPUTE_UNIT_LIMIT = 7_000; // Sufficient for SPL token transfer
+const DEFAULT_COMPUTE_UNIT_LIMIT = 20_000; // Sufficient for SPL token transfer
 const DEFAULT_COMPUTE_UNIT_PRICE_MICROLAMPORTS = 1; // Minimal price
 
 /**
