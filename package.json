@@ -65,7 +65,7 @@
     "release": "npm run build && changeset publish"
   },
   "dependencies": {
-    "@payai/x402": "^2.2.1",
+    "@payai/x402": "^2.2.3",
     "@solana/spl-token": ">=0.4.14",
     "@solana/web3.js": ">=1.98.4",
     "zod": "^4.3.5"
