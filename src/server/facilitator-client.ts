@@ -5,7 +5,7 @@ import type {
   SettleResponse,
   SupportedResponse,
 } from '@payai/x402/types';
-import { getOrGenerateJwt } from '@payai/x402/auth';
+import { getOrGenerateJwt } from '@payai/facilitator';
 import { isSolanaNetwork } from '../types';
 
 /**
