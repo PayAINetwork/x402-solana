@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.4
+
+### Added
+
+- PayAI API key authentication support in `FacilitatorClient`
+- Use `@payai/facilitator` for JWT auth (automatic caching and refresh)
+
+### Changed
+
+- Bump `@payai/x402` dependency to `^2.2.4`
+- Add `@payai/facilitator` `^2.2.4` as dependency
+
 ## 2.0.3
 
 ### Patch Changes
