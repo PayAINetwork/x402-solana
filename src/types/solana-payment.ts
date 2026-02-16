@@ -1,5 +1,5 @@
-import type { VersionedTransaction } from "@solana/web3.js";
-import type { SolanaNetworkSimple } from "./x402-protocol";
+import type { VersionedTransaction } from '@solana/web3.js';
+import type { SolanaNetworkSimple } from './x402-protocol';
 
 /**
  * Solana-specific payment types (v2)
@@ -62,6 +62,10 @@ export interface X402ServerConfig {
   treasuryAddress: string;
   /** Facilitator service URL */
   facilitatorUrl: string;
+  /** PayAI API Key ID -- enables automatic JWT auth (bypasses free tier limits). */
+  apiKeyId?: string;
+  /** PayAI API Key Secret (Ed25519 PKCS#8, raw base64 or `payai_sk_` prefixed). */
+  apiKeySecret?: string;
   /** Custom RPC URL (defaults to public endpoint) */
   rpcUrl?: string;
   /** Default token to accept (defaults to USDC) */

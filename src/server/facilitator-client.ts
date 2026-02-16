@@ -4,8 +4,9 @@ import type {
   VerifyResponse,
   SettleResponse,
   SupportedResponse,
-} from "@payai/x402/types";
-import { isSolanaNetwork } from "../types";
+} from '@payai/x402/types';
+import { getOrGenerateJwt } from '@payai/facilitator';
+import { isSolanaNetwork } from '../types';
 
 /**
  * Facilitator supported kind (from /supported endpoint)
@@ -21,16 +22,60 @@ interface SupportedKind {
 }
 
 /**
- * Client for communicating with x402 facilitator service (v2)
+ * Configuration for the facilitator client
+ */
+interface FacilitatorClientConfig {
+  url: string;
+  /** PayAI API Key ID for JWT auth */
+  apiKeyId?: string | undefined;
+  /** PayAI API Key Secret for JWT auth */
+  apiKeySecret?: string | undefined;
+}
+
+/**
+ * Client for communicating with x402 facilitator service (v2).
+ *
+ * When `apiKeyId` and `apiKeySecret` are provided, all requests are
+ * automatically authenticated with a JWT Bearer token (cached and refreshed).
  */
 export class FacilitatorClient {
-  constructor(private facilitatorUrl: string) {}
+  private readonly facilitatorUrl: string;
+  private readonly apiKeyId: string | undefined;
+  private readonly apiKeySecret: string | undefined;
+
+  constructor(config: FacilitatorClientConfig) {
+    this.facilitatorUrl = config.url;
+    this.apiKeyId = config.apiKeyId;
+    this.apiKeySecret = config.apiKeySecret;
+  }
+
+  /**
+   * Build auth headers when API keys are configured.
+   * Returns an empty object when no keys are present.
+   */
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    if (!this.apiKeyId || !this.apiKeySecret) {
+      return {};
+    }
+
+    const jwt = await getOrGenerateJwt({
+      apiKeyId: this.apiKeyId,
+      apiKeySecret: this.apiKeySecret,
+    });
+
+    return { Authorization: `Bearer ${jwt}` };
+  }
 
   /**
    * Get supported payment kinds from facilitator
    */
   async getSupported(): Promise<SupportedResponse> {
-    const response = await fetch(`${this.facilitatorUrl}/supported`);
+    const authHeaders = await this.getAuthHeaders();
+
+    const response = await fetch(`${this.facilitatorUrl}/supported`, {
+      headers: { ...authHeaders },
+    });
+
     if (!response.ok) {
       throw new Error(`Facilitator /supported returned ${response.status}`);
     }
@@ -46,18 +91,17 @@ export class FacilitatorClient {
 
     // Look for network support - match by CAIP-2 prefix for Solana networks
     const networkSupport = (supportedData.kinds as SupportedKind[])?.find(
-      (kind) =>
-        kind.scheme === "exact" &&
+      kind =>
+        kind.scheme === 'exact' &&
         isSolanaNetwork(kind.network) &&
         isSolanaNetwork(network) &&
         // Match if both are same network type (mainnet or devnet)
-        (kind.network.includes("devnet") === network.includes("devnet") ||
-          kind.network === network),
+        (kind.network.includes('devnet') === network.includes('devnet') || kind.network === network)
     );
 
     if (!networkSupport?.extra?.feePayer) {
       throw new Error(
-        `Facilitator does not support network "${network}" with scheme "exact" or feePayer not provided`,
+        `Facilitator does not support network "${network}" with scheme "exact" or feePayer not provided`
       );
     }
 
@@ -70,12 +114,12 @@ export class FacilitatorClient {
    */
   async verifyPayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements,
+    paymentRequirements: PaymentRequirements
   ): Promise<VerifyResponse> {
     try {
       // Decode the base64 payment payload
       const paymentPayload: PaymentPayload = JSON.parse(
-        Buffer.from(paymentHeader, "base64").toString("utf8"),
+        Buffer.from(paymentHeader, 'base64').toString('utf8')
       );
 
       const verifyPayload = {
@@ -83,23 +127,23 @@ export class FacilitatorClient {
         paymentRequirements,
       };
 
+      const authHeaders = await this.getAuthHeaders();
+
       const response = await fetch(`${this.facilitatorUrl}/verify`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
+          ...authHeaders,
         },
         body: JSON.stringify(verifyPayload),
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error(
-          `Facilitator /verify returned ${response.status}:`,
-          errorBody,
-        );
+        console.error(`Facilitator /verify returned ${response.status}:`, errorBody);
         return {
           isValid: false,
-          invalidReason: "unexpected_verify_error",
+          invalidReason: 'unexpected_verify_error',
         };
       }
 
@@ -107,10 +151,10 @@ export class FacilitatorClient {
       const facilitatorResponse: VerifyResponse = await response.json();
       return facilitatorResponse;
     } catch (error) {
-      console.error("Payment verification failed:", error);
+      console.error('Payment verification failed:', error);
       return {
         isValid: false,
-        invalidReason: "unexpected_verify_error",
+        invalidReason: 'unexpected_verify_error',
       };
     }
   }
@@ -121,12 +165,12 @@ export class FacilitatorClient {
    */
   async settlePayment(
     paymentHeader: string,
-    paymentRequirements: PaymentRequirements,
+    paymentRequirements: PaymentRequirements
   ): Promise<SettleResponse> {
     try {
       // Decode the base64 payment payload
       const paymentPayload: PaymentPayload = JSON.parse(
-        Buffer.from(paymentHeader, "base64").toString("utf8"),
+        Buffer.from(paymentHeader, 'base64').toString('utf8')
       );
 
       const settlePayload = {
@@ -134,24 +178,24 @@ export class FacilitatorClient {
         paymentRequirements,
       };
 
+      const authHeaders = await this.getAuthHeaders();
+
       const response = await fetch(`${this.facilitatorUrl}/settle`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
+          ...authHeaders,
         },
         body: JSON.stringify(settlePayload),
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error(
-          `Facilitator /settle returned ${response.status}:`,
-          errorBody,
-        );
+        console.error(`Facilitator /settle returned ${response.status}:`, errorBody);
         return {
           success: false,
-          errorReason: "unexpected_settle_error",
-          transaction: "",
+          errorReason: 'unexpected_settle_error',
+          transaction: '',
           network: paymentRequirements.network,
         };
       }
@@ -160,11 +204,11 @@ export class FacilitatorClient {
       const facilitatorResponse: SettleResponse = await response.json();
       return facilitatorResponse;
     } catch (error) {
-      console.error("Payment settlement failed:", error);
+      console.error('Payment settlement failed:', error);
       return {
         success: false,
-        errorReason: "unexpected_settle_error",
-        transaction: "",
+        errorReason: 'unexpected_settle_error',
+        transaction: '',
         network: paymentRequirements.network,
       };
     }

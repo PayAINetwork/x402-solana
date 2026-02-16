@@ -1,6 +1,6 @@
 {
   "name": "x402-solana",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "A framework-agnostic implementation of the x402 payment protocol v2 for Solana clients (browsers) and servers",
   "keywords": [
     "x402",
@@ -65,7 +65,8 @@
     "release": "npm run build && changeset publish"
   },
   "dependencies": {
-    "@payai/x402": "^2.2.1",
+    "@payai/facilitator": "^2.2.4",
+    "@payai/x402": "^2.2.4",
     "@solana/spl-token": ">=0.4.14",
     "@solana/web3.js": ">=1.98.4",
     "zod": "^4.3.5"
