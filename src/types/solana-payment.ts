@@ -1,4 +1,8 @@
 import type { VersionedTransaction } from '@solana/web3.js';
+import type {
+  BeforePaymentCreationHook,
+  HookFailurePolicy,
+} from './before-payment';
 import type { SolanaNetworkSimple } from './x402-protocol';
 
 /**
@@ -40,6 +44,29 @@ export interface X402ClientConfig {
   customFetch?: typeof fetch;
   /** Enable verbose logging for debugging (default: false) */
   verbose?: boolean;
+  /**
+   * Optional hook after requirement selection, before wallet signing.
+   * A deliberate `{ abort: true }` blocks payment construction.
+   */
+  beforePaymentCreation?: BeforePaymentCreationHook;
+  /**
+   * Policy when beforePaymentCreation throws (not deliberate abort).
+   * Default: fail-open (transport/TWZRD availability).
+   */
+  hookFailurePolicy?: HookFailurePolicy;
+}
+
+/**
+ * Configuration for the payment interceptor (createPaymentInterceptor).
+ */
+export interface PaymentInterceptorConfig {
+  fetch: typeof fetch;
+  wallet: WalletAdapter;
+  rpcUrl: string;
+  maxValue?: bigint;
+  verbose?: boolean;
+  beforePaymentCreation?: BeforePaymentCreationHook;
+  hookFailurePolicy?: HookFailurePolicy;
 }
 
 /**

@@ -1,5 +1,10 @@
 import type { PaymentRequirements, PaymentRequired } from "@payai/x402/types";
 import { safeBase64Decode } from "@payai/x402/utils";
+import type {
+  BeforePaymentCreationHook,
+  HookFailurePolicy,
+  PaymentInterceptorConfig,
+} from "../types";
 import type { WalletAdapter } from "../types";
 import { isSolanaNetwork } from "../types";
 import { createSolanaPaymentTransaction } from "./transaction-builder";
@@ -20,23 +25,30 @@ function decodePaymentRequiredHeader(header: string): PaymentRequired {
   return JSON.parse(decoded) as PaymentRequired;
 }
 
-/**
- * Create a custom fetch function that automatically handles x402 payments (v2)
- *
- * @param fetchFn - Base fetch function to use
- * @param wallet - Wallet adapter for signing transactions
- * @param rpcUrl - Solana RPC URL
- * @param maxValue - Maximum payment amount in atomic units (0 = no limit)
- * @param verbose - Enable verbose logging (default: false)
- * @returns Wrapped fetch function with automatic payment handling
- */
-export function createPaymentFetch(
-  fetchFn: typeof fetch,
-  wallet: WalletAdapter,
-  rpcUrl: string,
-  maxValue: bigint = BigInt(0),
-  verbose: boolean = false,
-) {
+type PaymentFetch = (
+  input: RequestInfo,
+  init?: RequestInit,
+) => Promise<Response>;
+
+function buildPaymentFetch(config: {
+  fetchFn: typeof fetch;
+  wallet: WalletAdapter;
+  rpcUrl: string;
+  maxValue: bigint;
+  verbose: boolean;
+  beforePaymentCreation?: BeforePaymentCreationHook;
+  hookFailurePolicy: HookFailurePolicy;
+}): PaymentFetch {
+  const {
+    fetchFn,
+    wallet,
+    rpcUrl,
+    maxValue,
+    verbose,
+    beforePaymentCreation,
+    hookFailurePolicy,
+  } = config;
+
   const log = (...args: unknown[]) => {
     if (verbose) console.log("[x402-solana]", ...args);
   };
@@ -45,31 +57,24 @@ export function createPaymentFetch(
     const url = typeof input === "string" ? input : input.url;
     log("Making initial request to:", url);
 
-    // Make initial request
     const response = await fetchFn(input, init);
     log("Initial response status:", response.status);
 
-    // If not 402, return as-is
     if (response.status !== 402) {
       return response;
     }
 
     log("Got 402, parsing payment requirements...");
 
-    // Parse payment requirements from 402 response
-    // v2: Read from PAYMENT-REQUIRED header (base64-encoded)
-    // v1 fallback: Read from response body
     let paymentRequired: PaymentRequired;
     let protocolVersion: 1 | 2;
 
     const paymentRequiredHeader = response.headers.get("PAYMENT-REQUIRED");
     if (paymentRequiredHeader) {
-      // v2: Decode from header
       log("Found PAYMENT-REQUIRED header (v2 protocol)");
       paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader);
       protocolVersion = 2;
     } else {
-      // v1 fallback: Parse from body
       log("No PAYMENT-REQUIRED header, falling back to body (v1 protocol)");
       const rawResponse = (await response.json()) as X402ResponseV1;
       paymentRequired = rawResponse;
@@ -82,8 +87,6 @@ export function createPaymentFetch(
     const parsedPaymentRequirements: PaymentRequirements[] =
       paymentRequired.accepts || [];
 
-    // Select first suitable payment requirement for Solana
-    // Supports both simple format ("solana", "solana-devnet") and CAIP-2 format ("solana:chainId")
     const selectedRequirements = parsedPaymentRequirements.find(
       (req: PaymentRequirements) =>
         req.scheme === "exact" && isSolanaNetwork(req.network),
@@ -97,8 +100,6 @@ export function createPaymentFetch(
       throw new Error("No suitable Solana payment requirements found");
     }
 
-    // Check amount against max value if specified
-    // v2 uses `amount`, but we also support legacy `maxAmountRequired` for backwards compatibility
     const paymentAmount = BigInt(
       selectedRequirements.amount ||
         (selectedRequirements as unknown as { maxAmountRequired?: string })
@@ -110,12 +111,35 @@ export function createPaymentFetch(
       throw new Error("Payment amount exceeds maximum allowed");
     }
 
-    // Get the resource URL for the payment payload
     const resourceUrl = typeof input === "string" ? input : input.url;
+
+    if (beforePaymentCreation) {
+      let hookResult;
+      try {
+        hookResult = await beforePaymentCreation({
+          selectedRequirements,
+          resourceUrl,
+          protocolVersion,
+        });
+      } catch (err) {
+        if (hookFailurePolicy === "fail-closed") {
+          throw err;
+        }
+        log(
+          "beforePaymentCreation hook threw (fail-open), proceeding:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+
+      if (hookResult && "abort" in hookResult && hookResult.abort === true) {
+        throw new Error(
+          hookResult.reason ?? "Payment blocked by beforePaymentCreation hook",
+        );
+      }
+    }
 
     log("Creating signed transaction...");
 
-    // Create signed transaction
     const signedTransaction = await createSolanaPaymentTransaction(
       wallet,
       selectedRequirements,
@@ -123,12 +147,10 @@ export function createPaymentFetch(
     );
     log("Transaction signed successfully");
 
-    // Create payment payload based on protocol version
     let paymentHeader: string;
     let headerName: string;
 
     if (protocolVersion === 2) {
-      // v2: Use PAYMENT-SIGNATURE header with full payload
       paymentHeader = createPaymentPayload(
         signedTransaction,
         selectedRequirements,
@@ -136,7 +158,6 @@ export function createPaymentFetch(
       );
       headerName = "PAYMENT-SIGNATURE";
     } else {
-      // v1: Use X-PAYMENT header with simpler payload
       paymentHeader = createPaymentPayloadV1(
         signedTransaction,
         selectedRequirements,
@@ -147,7 +168,6 @@ export function createPaymentFetch(
     log("Payment header created, length:", paymentHeader.length);
     log("Using header:", headerName);
 
-    // Retry with appropriate payment header
     const newInit = {
       ...init,
       headers: {
@@ -163,3 +183,60 @@ export function createPaymentFetch(
     return retryResponse;
   };
 }
+
+/**
+ * Create a payment interceptor with optional beforePaymentCreation hook.
+ */
+export function createPaymentInterceptor(
+  config: PaymentInterceptorConfig,
+): PaymentFetch {
+  const built: Parameters<typeof buildPaymentFetch>[0] = {
+    fetchFn: config.fetch,
+    wallet: config.wallet,
+    rpcUrl: config.rpcUrl,
+    maxValue: config.maxValue ?? BigInt(0),
+    verbose: config.verbose ?? false,
+    hookFailurePolicy: config.hookFailurePolicy ?? "fail-open",
+  };
+  if (config.beforePaymentCreation) {
+    built.beforePaymentCreation = config.beforePaymentCreation;
+  }
+  return buildPaymentFetch(built);
+}
+
+/**
+ * Create a custom fetch function that automatically handles x402 payments (v2)
+ */
+export function createPaymentFetch(
+  fetchFn: typeof fetch,
+  wallet: WalletAdapter,
+  rpcUrl: string,
+  maxValue: bigint = BigInt(0),
+  verbose: boolean = false,
+  options?: Pick<
+    PaymentInterceptorConfig,
+    "beforePaymentCreation" | "hookFailurePolicy"
+  >,
+): PaymentFetch {
+  const interceptorConfig: PaymentInterceptorConfig = {
+    fetch: fetchFn,
+    wallet,
+    rpcUrl,
+    maxValue,
+    verbose,
+  };
+  if (options?.beforePaymentCreation) {
+    interceptorConfig.beforePaymentCreation = options.beforePaymentCreation;
+  }
+  if (options?.hookFailurePolicy) {
+    interceptorConfig.hookFailurePolicy = options.hookFailurePolicy;
+  }
+  return createPaymentInterceptor(interceptorConfig);
+}
+
+export type {
+  BeforePaymentCreationContext,
+  BeforePaymentCreationHook,
+  BeforePaymentCreationResult,
+  HookFailurePolicy,
+} from "../types/before-payment";

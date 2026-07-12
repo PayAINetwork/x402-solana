@@ -44,4 +44,5 @@ export * from "./x402-protocol";
 // ============================================
 // Custom Solana types
 // ============================================
+export * from "./before-payment";
 export * from "./solana-payment";

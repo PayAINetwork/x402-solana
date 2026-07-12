@@ -47,41 +47,44 @@ This package implements x402 protocol v2. Key features:
 
 ### TWZRD buyer-side trust guard (optional, pre-sign)
 
-[x402-solana](https://github.com/PayAINetwork/x402-solana) accepts a `customFetch` hook. Compose
-[TWZRD](https://intel.twzrd.xyz) **before** wallet signing with `twzrd-x402-gate@0.5.3`:
+The payment interceptor selects the exact Solana requirement, then runs an optional
+`beforePaymentCreation` hook **before** wallet signing:
+
+```text
+initial request -> 402 -> select requirement -> TWZRD hook -> sign -> retry
+```
 
 ```bash
 npm install twzrd-x402-gate@0.5.3
 ```
 
-**Default machine rule** (decision-only + wash refuse; non-disruptive for unknown sellers):
+**Default** (decision-only + wash refuse):
 
 ```typescript
-import { createX402Client } from "x402-solana/client";
-import { withTwzrdGuard } from "twzrd-x402-gate";
+import { createPaymentInterceptor } from "x402-solana/client";
+import { installTwzrdX402ClientHook } from "./examples/twzrd-before-payment-hook";
 
-const customFetch = withTwzrdGuard(fetch, {
-  gateOnCanSpend: false,      // block on decision=block only (not can_spend=false)
-  refuseWashFlagged: true,    // refuse when free merchant_card.wash_flagged
-  failOpen: false,            // intel outage blocks (set true to allow-on-outage)
+const paymentFetch = createPaymentInterceptor({
+  fetch,
+  wallet,
+  rpcUrl: "https://api.mainnet-beta.solana.com",
+  beforePaymentCreation: installTwzrdX402ClientHook({
+    gateOnCanSpend: false,
+    refuseWash: true,
+  }),
 });
-
-const client = createX402Client({ wallet, network: "solana", customFetch });
-await client.fetch("https://api.example.com/paid"); // 402 -> TWZRD -> sign | refuse
 ```
 
-**Strict opt-in** (also block when `can_spend=false`; zero-spend proof expects `signInvocations: 0`):
+**Strict opt-in** (also block when `can_spend=false`):
 
 ```typescript
-const strictFetch = withTwzrdGuard(fetch, { gateOnCanSpend: true, refuseWashFlagged: true });
+beforePaymentCreation: installTwzrdX402ClientHook({ gateOnCanSpend: true }),
 ```
 
-Runnable helper: [`examples/twzrd-guarded-client.ts`](./examples/twzrd-guarded-client.ts) (includes v2 `PAYMENT-REQUIRED` header normalization for `withTwzrdGuard`).  
-Zero-funds harness + closeout:
-[twzrd-trust proof](https://github.com/twzrd-sol/twzrd-trust/blob/main/docs/proofs/seller-graph-payguard-closeout-2026-07-12.md),
-[signer-spy script](https://github.com/twzrd-sol/twzrd-trust/blob/main/docs/proofs/examples/zero-spend-guard-check.mjs).
+Hook failure policy: transport/TWZRD availability errors default to **fail-open**; a deliberate
+`{ abort: true }` from TWZRD always blocks (never converted to fail-open).
 
-Tests: `npm run test:trust-guard` (real `twzrd-x402-gate@0.5.3`, mocked intel; strict mode asserts `signerInvocationCount: 0`).
+Tests: `npm run test:trust-guard` (strict mode: `signerInvocationCount: 0`, no retry fetch).
 
 ### Client Side (React/Frontend)
 
