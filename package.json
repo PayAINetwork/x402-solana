@@ -57,7 +57,8 @@
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
     "clean": "rm -rf dist",
-    "test": "jest",
+    "test": "jest && npm run test:trust-guard",
+    "test:trust-guard": "tsx tests/trust-guard-composition.verify.ts",
     "test:watch": "jest --watch",
     "prepublishOnly": "npm run clean && npm run build && npm run typecheck",
     "changeset": "changeset",
@@ -87,6 +88,8 @@
     "prettier": "^3.7.4",
     "ts-jest": "^29.4.6",
     "tsup": "^8.5.1",
+    "tsx": "^4.23.0",
+    "twzrd-x402-gate": "^0.5.3",
     "typescript": "^5.9.3"
   },
   "engines": {

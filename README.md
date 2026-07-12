@@ -45,6 +45,44 @@ This package implements x402 protocol v2. Key features:
 
 ## Usage
 
+### TWZRD buyer-side trust guard (optional, pre-sign)
+
+[x402-solana](https://github.com/PayAINetwork/x402-solana) accepts a `customFetch` hook. Compose
+[TWZRD](https://intel.twzrd.xyz) **before** wallet signing with `twzrd-x402-gate@0.5.3`:
+
+```bash
+npm install twzrd-x402-gate@0.5.3
+```
+
+**Default machine rule** (decision-only + wash refuse; non-disruptive for unknown sellers):
+
+```typescript
+import { createX402Client } from "x402-solana/client";
+import { withTwzrdGuard } from "twzrd-x402-gate";
+
+const customFetch = withTwzrdGuard(fetch, {
+  gateOnCanSpend: false,      // block on decision=block only (not can_spend=false)
+  refuseWashFlagged: true,    // refuse when free merchant_card.wash_flagged
+  failOpen: false,            // intel outage blocks (set true to allow-on-outage)
+});
+
+const client = createX402Client({ wallet, network: "solana", customFetch });
+await client.fetch("https://api.example.com/paid"); // 402 -> TWZRD -> sign | refuse
+```
+
+**Strict opt-in** (also block when `can_spend=false`; zero-spend proof expects `signInvocations: 0`):
+
+```typescript
+const strictFetch = withTwzrdGuard(fetch, { gateOnCanSpend: true, refuseWashFlagged: true });
+```
+
+Runnable helper: [`examples/twzrd-guarded-client.ts`](./examples/twzrd-guarded-client.ts) (includes v2 `PAYMENT-REQUIRED` header normalization for `withTwzrdGuard`).  
+Zero-funds harness + closeout:
+[twzrd-trust proof](https://github.com/twzrd-sol/twzrd-trust/blob/main/docs/proofs/seller-graph-payguard-closeout-2026-07-12.md),
+[signer-spy script](https://github.com/twzrd-sol/twzrd-trust/blob/main/docs/proofs/examples/zero-spend-guard-check.mjs).
+
+Tests: `npm run test:trust-guard` (real `twzrd-x402-gate@0.5.3`, mocked intel; strict mode asserts `signerInvocationCount: 0`).
+
 ### Client Side (React/Frontend)
 
 The x402-solana client works with any wallet provider that implements the `WalletAdapter` interface. Below are examples using both Solana Wallet Adapter and Privy.
