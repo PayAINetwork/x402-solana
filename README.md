@@ -175,6 +175,52 @@ function MyComponent() {
 }
 ```
 
+#### Pre-payment policy hook (beforePayment)
+
+The client accepts an optional `beforePayment` hook that runs after a 402
+response is parsed and a payment requirement is selected, but **before the
+payment transaction is built and signed**. Return `{ abort: true, reason }`
+to refuse the payment - the wallet's `signTransaction` is never called and
+`client.fetch` throws.
+
+Use it for spend rules, allow/deny lists, or a trust preflight on the seller
+wallet. Example with [twzrd-x402-gate](https://www.npmjs.com/package/twzrd-x402-gate)
+(free TWZRD readiness check on the `payTo` wallet before any signature):
+
+```typescript
+import { createX402Client } from 'x402-solana/client';
+import { twzrdBeforePaymentCreation } from 'twzrd-x402-gate';
+
+const client = createX402Client({
+  wallet,
+  network: 'solana',
+  beforePayment: (requirements, context) =>
+    twzrdBeforePaymentCreation(
+      { ...requirements, resource: requirements.resource ?? context.resourceUrl },
+      { gateOnCanSpend: true }, // strict: refuse unless TWZRD vouches (can_spend)
+    ),
+});
+
+// Payments to blocked/unknown sellers now throw BEFORE the wallet signs:
+// "Payment aborted by beforePayment hook: [twzrd] twzrd_can_spend_false payTo=..."
+```
+
+Choosing a policy:
+
+- **Decision-only (default)**: omit `gateOnCanSpend` - only sellers TWZRD
+  flags as `block` (or wash-flagged merchants, which are refused by default)
+  are aborted; `warn` proceeds. Safe to adopt without disrupting existing flows.
+- **Strict mode** (`gateOnCanSpend: true`): additionally refuse whenever the
+  free preflight cannot vouch for the seller (`can_spend=false`). Use when the
+  application requires an affirmative trust signal before any signature.
+
+A runnable zero-funds demo (local 402 merchant + signer spy asserting the
+wallet is never invoked) lives in [`examples/twzrd-guard.mjs`](./examples/twzrd-guard.mjs):
+
+```bash
+npm run example:twzrd-guard
+```
+
 #### Using with a Proxy Server (CORS Bypass)
 
 If you're making requests from a browser to external APIs and encountering CORS issues, you can provide a custom fetch function that routes requests through your proxy server:
@@ -561,6 +607,7 @@ Creates a new x402 client instance.
   rpcUrl?: string;                    // Optional custom RPC
   amount?: bigint;                    // Optional safety limit (max payment)
   customFetch?: typeof fetch;         // Optional custom fetch for proxy support
+  beforePayment?: BeforePaymentHook;  // Optional policy hook - abort before signing
   verbose?: boolean;                  // Optional debug logging
 }
 ```
