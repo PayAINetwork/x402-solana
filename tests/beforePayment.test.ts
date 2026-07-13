@@ -16,6 +16,7 @@ import {
   createSuccessResponse,
   createV2PaymentRequiredResponse,
   decodePaymentHeader,
+  v1PaymentRequiredDevnet,
   v2PaymentRequired,
 } from './fixtures';
 
@@ -89,10 +90,12 @@ describe('beforePayment hook', () => {
     expect(hook).toHaveBeenCalledTimes(1);
     expect(mockBuildAndSign).toHaveBeenCalledTimes(1);
 
-    // Hook receives the SELECTED requirements plus request context
+    // Hook receives the selected requirements plus request context.
     const [requirements, context] = hook.mock.calls[0] as Parameters<BeforePaymentHook>;
     expect(requirements.payTo).toBe(v2PaymentRequired.accepts[0].payTo);
-    expect(context.resourceUrl).toBe(TEST_URL);
+    expect(context.requestUrl).toBe(TEST_URL);
+    expect(context.responseUrl).toBe(TEST_URL);
+    expect(context.declaredResource).toEqual(v2PaymentRequired.resource);
     expect(context.protocolVersion).toBe(2);
 
     // The retried request carries the payment header
@@ -189,6 +192,71 @@ describe('beforePayment hook', () => {
     expect(wallet.signTransaction).toHaveBeenCalledTimes(0);
     expect(mockBuildAndSign).toHaveBeenCalledTimes(0);
     expect(customFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not build, sign, or retry if the request aborts while an async hook is pending', async () => {
+    const wallet = createSpyWallet();
+    const controller = new AbortController();
+    const customFetch = jest.fn(async () => createV2PaymentRequiredResponse());
+    let resolveHook: () => void;
+    let signalHookStarted: () => void;
+    const hookStarted = new Promise<void>((resolve) => {
+      signalHookStarted = resolve;
+    });
+    const hook = jest.fn(
+      () =>
+        new Promise<BeforePaymentDecision>((resolve) => {
+          resolveHook = () => resolve(undefined);
+          signalHookStarted();
+        }),
+    );
+
+    const client = createX402Client({
+      wallet,
+      network: 'solana-devnet',
+      customFetch: customFetch as unknown as typeof fetch,
+      beforePayment: hook,
+    });
+
+    const pending = client.fetch(TEST_URL, { signal: controller.signal });
+    await hookStarted;
+    controller.abort();
+    resolveHook();
+
+    await expect(pending).rejects.toThrow();
+    const [, context] = hook.mock.calls[0] as Parameters<BeforePaymentHook>;
+    expect(context.signal).toBe(controller.signal);
+    expect(wallet.signTransaction).toHaveBeenCalledTimes(0);
+    expect(mockBuildAndSign).toHaveBeenCalledTimes(0);
+    expect(customFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes legacy v1 amount for policy and retries with X-PAYMENT after approval', async () => {
+    const hook = jest.fn(async () => undefined);
+    const customFetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(v1PaymentRequiredDevnet), {
+          status: 402,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(createSuccessResponse());
+
+    const client = createX402Client({
+      wallet: mockWallet,
+      network: 'solana-devnet',
+      customFetch: customFetch as unknown as typeof fetch,
+      beforePayment: hook,
+    });
+
+    await client.fetch(TEST_URL);
+
+    const [requirements, context] = hook.mock.calls[0] as Parameters<BeforePaymentHook>;
+    expect(context.protocolVersion).toBe(1);
+    expect(requirements.amount).toBe(v1PaymentRequiredDevnet.accepts[0].maxAmountRequired);
+    const retryInit = customFetch.mock.calls[1][1] as RequestInit;
+    expect((retryInit.headers as Record<string, string>)['X-PAYMENT']).toBeDefined();
   });
 
   describe('payer policy contract', () => {

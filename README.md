@@ -192,6 +192,11 @@ import { createX402Client } from 'x402-solana/client';
 
 const MAX_AMOUNT_BASE_UNITS = 1_000_000n; // 1 USDC (6 decimals)
 const ALLOWED = new Set(['MerchantWa11et...']);
+const USDC_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const SOLANA_MAINNET = new Set([
+  'solana',
+  'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+]);
 
 const client = createX402Client({
   wallet,
@@ -200,15 +205,13 @@ const client = createX402Client({
     if (!ALLOWED.has(requirements.payTo)) {
       return { abort: true, reason: `seller_not_allowlisted:${requirements.payTo}` };
     }
-    const amount =
-      requirements.amount ??
-      ('maxAmountRequired' in requirements
-        ? String(requirements.maxAmountRequired)
-        : undefined);
-    if (!amount) {
-      return { abort: true, reason: 'missing_amount' };
+    if (requirements.asset !== USDC_MAINNET) {
+      return { abort: true, reason: 'unsupported_asset' };
     }
-    if (BigInt(amount) > MAX_AMOUNT_BASE_UNITS) {
+    if (!SOLANA_MAINNET.has(requirements.network)) {
+      return { abort: true, reason: 'unsupported_network' };
+    }
+    if (BigInt(requirements.amount) > MAX_AMOUNT_BASE_UNITS) {
       return { abort: true, reason: 'amount_above_cap' };
     }
     // return nothing (or { abort: false }) to proceed to signing

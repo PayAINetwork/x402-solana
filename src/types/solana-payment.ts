@@ -1,6 +1,6 @@
-import type { VersionedTransaction } from '@solana/web3.js';
-import type { PaymentRequirements } from '@payai/x402/types';
-import type { SolanaNetworkSimple } from './x402-protocol';
+import type { VersionedTransaction } from "@solana/web3.js";
+import type { PaymentRequirements, PaymentRequired } from "@payai/x402/types";
+import type { SolanaNetworkSimple } from "./x402-protocol";
 
 /**
  * Solana-specific payment types (v2)
@@ -31,13 +31,31 @@ export type BeforePaymentDecision =
   | void;
 
 /**
+ * Detached policy view of the selected payment requirements.
+ *
+ * `amount` is normalized from the legacy v1 `maxAmountRequired` field when
+ * necessary. The canonical requirements used to build and sign the payment
+ * are not modified.
+ */
+export type BeforePaymentRequirements = Omit<PaymentRequirements, "amount"> & {
+  amount: string;
+  maxAmountRequired?: string;
+};
+
+/**
  * Context passed to a beforePayment hook alongside the selected requirements.
  */
 export interface BeforePaymentContext {
-  /** URL of the resource the payment is for */
-  resourceUrl: string;
+  /** URL originally requested by the caller */
+  requestUrl: string;
+  /** Final response URL, when the fetch implementation exposes one */
+  responseUrl: string;
+  /** Resource declared by the server's payment-required payload, if present */
+  declaredResource?: PaymentRequired["resource"];
   /** x402 protocol version parsed from the 402 response */
   protocolVersion: 1 | 2;
+  /** Caller signal; policy code may use it to cancel external checks */
+  signal?: AbortSignal;
 }
 
 /**
@@ -51,7 +69,7 @@ export interface BeforePaymentContext {
  * Thrown errors propagate and abort the payment.
  */
 export type BeforePaymentHook = (
-  requirements: PaymentRequirements,
+  requirements: BeforePaymentRequirements,
   context: BeforePaymentContext,
 ) => Promise<BeforePaymentDecision> | BeforePaymentDecision;
 

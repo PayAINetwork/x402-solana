@@ -46,6 +46,7 @@ export function createX402Client(config: X402ClientConfig): X402Client {
 export type {
   X402ClientConfig,
   WalletAdapter,
+  BeforePaymentRequirements,
   BeforePaymentHook,
   BeforePaymentDecision,
   BeforePaymentContext,
