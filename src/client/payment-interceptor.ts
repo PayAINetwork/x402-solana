@@ -116,13 +116,17 @@ export function createPaymentFetch(
     const resourceUrl = typeof input === "string" ? input : input.url;
 
     // Run the beforePayment hook (if configured) BEFORE building/signing.
-    // An abort here guarantees the wallet's signTransaction is never called.
+    // Give policy code a detached snapshot so it cannot mutate the canonical
+    // requirements used to build the transaction and payment payload.
     if (beforePayment) {
       log("Running beforePayment hook...");
-      const decision = await beforePayment(selectedRequirements, {
-        resourceUrl,
-        protocolVersion,
-      });
+      const decision = await beforePayment(
+        structuredClone(selectedRequirements),
+        {
+          resourceUrl,
+          protocolVersion,
+        },
+      );
       if (decision && decision.abort === true) {
         const reason = decision.reason || "beforePayment hook aborted payment";
         log("Payment aborted by beforePayment hook:", reason);

@@ -45,7 +45,10 @@ export interface BeforePaymentContext {
  * selected, but BEFORE the payment transaction is built and signed.
  *
  * Use it to plug in payment policy: spend rules, allow/deny lists, or a
- * trust/reputation preflight on the payTo wallet.
+ * trust/reputation preflight on the payTo wallet. The hook receives a detached
+ * snapshot; mutating it does not change the requirements used for payment.
+ * The client's configured amount limit is enforced before this hook runs.
+ * Thrown errors propagate and abort the payment.
  */
 export type BeforePaymentHook = (
   requirements: PaymentRequirements,

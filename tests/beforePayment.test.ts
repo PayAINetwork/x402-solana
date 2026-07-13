@@ -15,6 +15,7 @@ import {
   mockWallet,
   createSuccessResponse,
   createV2PaymentRequiredResponse,
+  decodePaymentHeader,
   v2PaymentRequired,
 } from './fixtures';
 
@@ -102,6 +103,40 @@ describe('beforePayment hook', () => {
     ).toBeDefined();
   });
 
+  it('isolates payment construction from hook mutations', async () => {
+    const originalRequirements = structuredClone(v2PaymentRequired.accepts[0]);
+    const customFetch = jest
+      .fn()
+      .mockResolvedValueOnce(createV2PaymentRequiredResponse())
+      .mockResolvedValueOnce(createSuccessResponse());
+
+    const client = createX402Client({
+      wallet: mockWallet,
+      network: 'solana-devnet',
+      customFetch: customFetch as unknown as typeof fetch,
+      beforePayment: (requirements) => {
+        requirements.payTo = 'MutatedRecipientWalletAddress';
+        requirements.amount = '999999999';
+        requirements.asset = 'MutatedAssetAddress';
+        requirements.extra.feePayer = 'MutatedFeePayerWalletAddress';
+      },
+    });
+
+    await client.fetch(TEST_URL);
+
+    const builtRequirements = mockBuildAndSign.mock.calls[0]?.[1];
+    expect(builtRequirements).toEqual(originalRequirements);
+
+    const retryInit = customFetch.mock.calls[1]?.[1] as RequestInit;
+    const paymentHeader = (retryInit.headers as Record<string, string>)[
+      'PAYMENT-SIGNATURE'
+    ];
+    const paymentPayload = decodePaymentHeader(paymentHeader) as {
+      accepted: typeof originalRequirements;
+    };
+    expect(paymentPayload.accepted).toEqual(originalRequirements);
+  });
+
   it('never invokes the signer and does not retry when the hook aborts', async () => {
     const wallet = createSpyWallet();
     const customFetch = jest.fn(async () => createV2PaymentRequiredResponse());
@@ -137,38 +172,56 @@ describe('beforePayment hook', () => {
     await expect(client.fetch(TEST_URL)).rejects.toThrow('payTo not on allowlist');
   });
 
-  describe('reputation-preflight policy contract', () => {
-    // A payer that consults an external reputation service before signing gets
-    // back some verdict + a "can I spend" flag. This locks the two policy shapes
-    // that matter for the hook, with a local stand-in for the service so the
-    // test has no network dependency: strict (refuse unless vouched) and
-    // decision-only (refuse only on an explicit block).
-    interface ReadinessCard {
-      decision: 'allow' | 'warn' | 'block';
-      can_spend: boolean;
-      trust_score: number;
+  it('fails closed without building, signing, or retrying when the hook throws', async () => {
+    const wallet = createSpyWallet();
+    const customFetch = jest.fn(async () => createV2PaymentRequiredResponse());
+
+    const client = createX402Client({
+      wallet,
+      network: 'solana-devnet',
+      customFetch: customFetch as unknown as typeof fetch,
+      beforePayment: () => {
+        throw new Error('policy_down');
+      },
+    });
+
+    await expect(client.fetch(TEST_URL)).rejects.toThrow('policy_down');
+    expect(wallet.signTransaction).toHaveBeenCalledTimes(0);
+    expect(mockBuildAndSign).toHaveBeenCalledTimes(0);
+    expect(customFetch).toHaveBeenCalledTimes(1);
+  });
+
+  describe('payer policy contract', () => {
+    // A payer can map any local or remote policy result into the hook's small
+    // abort/proceed contract. These cases cover required approval and advisory
+    // outcomes without coupling the client to a policy provider.
+    interface PolicyResult {
+      outcome: 'approve' | 'review' | 'deny';
+      approved: boolean;
     }
 
-    function reputationPolicy(
-      card: ReadinessCard,
-      options: { gateOnCanSpend: boolean },
+    function createPolicyHook(
+      result: PolicyResult,
+      options: { requireApproval: boolean },
       onDecision?: (reason: string) => void,
     ): BeforePaymentHook {
       return (): BeforePaymentDecision => {
-        if (card.decision === 'block') {
-          onDecision?.(`refused_verdict_${card.decision}`);
-          return { abort: true, reason: `refused_verdict_${card.decision}` };
+        if (result.outcome === 'deny') {
+          onDecision?.('policy_denied');
+          return { abort: true, reason: 'policy_denied' };
         }
-        if (options.gateOnCanSpend && card.can_spend === false) {
-          onDecision?.('refused_not_vouched');
-          return { abort: true, reason: 'refused_not_vouched' };
+        if (options.requireApproval && result.approved === false) {
+          onDecision?.('approval_required');
+          return { abort: true, reason: 'approval_required' };
         }
-        onDecision?.(card.decision === 'warn' ? 'allowed_with_warning' : 'allowed');
+        onDecision?.(
+          result.outcome === 'review' ? 'proceeded_with_review' : 'approved',
+        );
         return undefined;
       };
     }
 
-    it('strict mode: can_spend=false aborts with signer invocation count 0', async () => {
+    it('required approval: approved=false aborts with signer invocation count 0', async () => {
       const wallet = createSpyWallet();
       const customFetch = jest.fn(async () => createV2PaymentRequiredResponse());
       const decisions: string[] = [];
@@ -177,21 +230,21 @@ describe('beforePayment hook', () => {
         wallet,
         network: 'solana-devnet',
         customFetch: customFetch as unknown as typeof fetch,
-        beforePayment: reputationPolicy(
-          { decision: 'warn', can_spend: false, trust_score: 56 },
-          { gateOnCanSpend: true },
+        beforePayment: createPolicyHook(
+          { outcome: 'review', approved: false },
+          { requireApproval: true },
           (reason) => decisions.push(reason),
         ),
       });
 
-      await expect(client.fetch(TEST_URL)).rejects.toThrow('refused_not_vouched');
+      await expect(client.fetch(TEST_URL)).rejects.toThrow('approval_required');
 
       expect(wallet.signTransaction).toHaveBeenCalledTimes(0);
       expect(mockBuildAndSign).toHaveBeenCalledTimes(0);
-      expect(decisions).toEqual(['refused_not_vouched']);
+      expect(decisions).toEqual(['approval_required']);
     });
 
-    it('decision-only default: warn proceeds and the decision is observable', async () => {
+    it('advisory review proceeds and the outcome is observable', async () => {
       const customFetch = jest
         .fn()
         .mockResolvedValueOnce(createV2PaymentRequiredResponse())
@@ -202,9 +255,9 @@ describe('beforePayment hook', () => {
         wallet: mockWallet,
         network: 'solana-devnet',
         customFetch: customFetch as unknown as typeof fetch,
-        beforePayment: reputationPolicy(
-          { decision: 'warn', can_spend: false, trust_score: 56 },
-          { gateOnCanSpend: false },
+        beforePayment: createPolicyHook(
+          { outcome: 'review', approved: false },
+          { requireApproval: false },
           (reason) => decisions.push(reason),
         ),
       });
@@ -213,7 +266,7 @@ describe('beforePayment hook', () => {
 
       expect(response.status).toBe(200);
       expect(mockBuildAndSign).toHaveBeenCalledTimes(1);
-      expect(decisions).toEqual(['allowed_with_warning']);
+      expect(decisions).toEqual(['proceeded_with_review']);
     });
   });
 });

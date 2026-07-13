@@ -190,7 +190,7 @@ required:
 ```typescript
 import { createX402Client } from 'x402-solana/client';
 
-const MAX_LAMPORTS = 1_000_000n; // refuse anything above this
+const MAX_AMOUNT_BASE_UNITS = 1_000_000n; // 1 USDC (6 decimals)
 const ALLOWED = new Set(['MerchantWa11et...']);
 
 const client = createX402Client({
@@ -200,7 +200,15 @@ const client = createX402Client({
     if (!ALLOWED.has(requirements.payTo)) {
       return { abort: true, reason: `seller_not_allowlisted:${requirements.payTo}` };
     }
-    if (BigInt(requirements.maxAmountRequired) > MAX_LAMPORTS) {
+    const amount =
+      requirements.amount ??
+      ('maxAmountRequired' in requirements
+        ? String(requirements.maxAmountRequired)
+        : undefined);
+    if (!amount) {
+      return { abort: true, reason: 'missing_amount' };
+    }
+    if (BigInt(amount) > MAX_AMOUNT_BASE_UNITS) {
       return { abort: true, reason: 'amount_above_cap' };
     }
     // return nothing (or { abort: false }) to proceed to signing
@@ -212,12 +220,16 @@ const client = createX402Client({
 ```
 
 The hook may be async, so it can call an external policy or reputation service
-before deciding. It runs on every payment attempt, after requirement selection
-and before transaction construction, which makes it the last deterministic
-checkpoint at which a payment can be refused without a signature.
+before deciding. It receives a detached snapshot of the selected requirements;
+mutating the snapshot does not change what the client builds, signs, or sends.
+The client's configured `amount` limit is enforced first, so over-limit
+requirements are rejected without invoking the hook. For requirements that
+pass that limit, the hook is the last deterministic checkpoint at which a
+payment can be refused without a signature.
 
 Failure semantics: an unhandled throw inside the hook aborts the payment
-(fail-closed) rather than falling through to a signature.
+(fail-closed) rather than falling through to a signature. Returning `undefined`
+or `{ abort: false }` proceeds; returning `{ abort: true }` refuses.
 
 A runnable zero-funds demo (local 402 merchant + a signer spy asserting the
 wallet is never invoked on refusal) lives in
