@@ -137,32 +137,33 @@ describe('beforePayment hook', () => {
     await expect(client.fetch(TEST_URL)).rejects.toThrow('payTo not on allowlist');
   });
 
-  describe('trust-gate policy contract (twzrd-x402-gate shape)', () => {
-    // Mirrors the decision contract of a pre-payment trust preflight such as
-    // twzrd-x402-gate's twzrdBeforePaymentCreation (the real integration is
-    // demonstrated in examples/twzrd-guard.mjs - that package is ESM-only, so
-    // the contract is locked here with an equivalent local policy).
+  describe('reputation-preflight policy contract', () => {
+    // A payer that consults an external reputation service before signing gets
+    // back some verdict + a "can I spend" flag. This locks the two policy shapes
+    // that matter for the hook, with a local stand-in for the service so the
+    // test has no network dependency: strict (refuse unless vouched) and
+    // decision-only (refuse only on an explicit block).
     interface ReadinessCard {
       decision: 'allow' | 'warn' | 'block';
       can_spend: boolean;
       trust_score: number;
     }
 
-    function trustGatePolicy(
+    function reputationPolicy(
       card: ReadinessCard,
       options: { gateOnCanSpend: boolean },
       onDecision?: (reason: string) => void,
     ): BeforePaymentHook {
       return (): BeforePaymentDecision => {
         if (card.decision === 'block') {
-          onDecision?.(`twzrd_decision_${card.decision}`);
-          return { abort: true, reason: `twzrd_decision_${card.decision}` };
+          onDecision?.(`refused_verdict_${card.decision}`);
+          return { abort: true, reason: `refused_verdict_${card.decision}` };
         }
         if (options.gateOnCanSpend && card.can_spend === false) {
-          onDecision?.('twzrd_can_spend_false');
-          return { abort: true, reason: 'twzrd_can_spend_false' };
+          onDecision?.('refused_not_vouched');
+          return { abort: true, reason: 'refused_not_vouched' };
         }
-        onDecision?.(card.decision === 'warn' ? 'twzrd_warn_allowed' : 'twzrd_allow');
+        onDecision?.(card.decision === 'warn' ? 'allowed_with_warning' : 'allowed');
         return undefined;
       };
     }
@@ -176,18 +177,18 @@ describe('beforePayment hook', () => {
         wallet,
         network: 'solana-devnet',
         customFetch: customFetch as unknown as typeof fetch,
-        beforePayment: trustGatePolicy(
+        beforePayment: reputationPolicy(
           { decision: 'warn', can_spend: false, trust_score: 56 },
           { gateOnCanSpend: true },
           (reason) => decisions.push(reason),
         ),
       });
 
-      await expect(client.fetch(TEST_URL)).rejects.toThrow('twzrd_can_spend_false');
+      await expect(client.fetch(TEST_URL)).rejects.toThrow('refused_not_vouched');
 
       expect(wallet.signTransaction).toHaveBeenCalledTimes(0);
       expect(mockBuildAndSign).toHaveBeenCalledTimes(0);
-      expect(decisions).toEqual(['twzrd_can_spend_false']);
+      expect(decisions).toEqual(['refused_not_vouched']);
     });
 
     it('decision-only default: warn proceeds and the decision is observable', async () => {
@@ -201,7 +202,7 @@ describe('beforePayment hook', () => {
         wallet: mockWallet,
         network: 'solana-devnet',
         customFetch: customFetch as unknown as typeof fetch,
-        beforePayment: trustGatePolicy(
+        beforePayment: reputationPolicy(
           { decision: 'warn', can_spend: false, trust_score: 56 },
           { gateOnCanSpend: false },
           (reason) => decisions.push(reason),
@@ -212,7 +213,7 @@ describe('beforePayment hook', () => {
 
       expect(response.status).toBe(200);
       expect(mockBuildAndSign).toHaveBeenCalledTimes(1);
-      expect(decisions).toEqual(['twzrd_warn_allowed']);
+      expect(decisions).toEqual(['allowed_with_warning']);
     });
   });
 });

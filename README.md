@@ -183,42 +183,48 @@ payment transaction is built and signed**. Return `{ abort: true, reason }`
 to refuse the payment - the wallet's `signTransaction` is never called and
 `client.fetch` throws.
 
-Use it for spend rules, allow/deny lists, or a trust preflight on the seller
-wallet. Example with [twzrd-x402-gate](https://www.npmjs.com/package/twzrd-x402-gate)
-(free TWZRD readiness check on the `payTo` wallet before any signature):
+Use it for spend rules, allow/deny lists, velocity caps, or a reputation
+preflight on the seller wallet. The hook is a plain function - no dependency
+required:
 
 ```typescript
 import { createX402Client } from 'x402-solana/client';
-import { twzrdBeforePaymentCreation } from 'twzrd-x402-gate';
+
+const MAX_LAMPORTS = 1_000_000n; // refuse anything above this
+const ALLOWED = new Set(['MerchantWa11et...']);
 
 const client = createX402Client({
   wallet,
   network: 'solana',
-  beforePayment: (requirements, context) =>
-    twzrdBeforePaymentCreation(
-      { ...requirements, resource: requirements.resource ?? context.resourceUrl },
-      { gateOnCanSpend: true }, // strict: refuse unless TWZRD vouches (can_spend)
-    ),
+  beforePayment: (requirements) => {
+    if (!ALLOWED.has(requirements.payTo)) {
+      return { abort: true, reason: `seller_not_allowlisted:${requirements.payTo}` };
+    }
+    if (BigInt(requirements.maxAmountRequired) > MAX_LAMPORTS) {
+      return { abort: true, reason: 'amount_above_cap' };
+    }
+    // return nothing (or { abort: false }) to proceed to signing
+  },
 });
 
-// Payments to blocked/unknown sellers now throw BEFORE the wallet signs:
-// "Payment aborted by beforePayment hook: [twzrd] twzrd_can_spend_false payTo=..."
+// Refused payments throw BEFORE the wallet signs:
+// "Payment aborted by beforePayment hook: seller_not_allowlisted:..."
 ```
 
-Choosing a policy:
+The hook may be async, so it can call an external policy or reputation service
+before deciding. It runs on every payment attempt, after requirement selection
+and before transaction construction, which makes it the last deterministic
+checkpoint at which a payment can be refused without a signature.
 
-- **Decision-only (default)**: omit `gateOnCanSpend` - only sellers TWZRD
-  flags as `block` (or wash-flagged merchants, which are refused by default)
-  are aborted; `warn` proceeds. Safe to adopt without disrupting existing flows.
-- **Strict mode** (`gateOnCanSpend: true`): additionally refuse whenever the
-  free preflight cannot vouch for the seller (`can_spend=false`). Use when the
-  application requires an affirmative trust signal before any signature.
+Failure semantics: an unhandled throw inside the hook aborts the payment
+(fail-closed) rather than falling through to a signature.
 
-A runnable zero-funds demo (local 402 merchant + signer spy asserting the
-wallet is never invoked) lives in [`examples/twzrd-guard.mjs`](./examples/twzrd-guard.mjs):
+A runnable zero-funds demo (local 402 merchant + a signer spy asserting the
+wallet is never invoked on refusal) lives in
+[`examples/before-payment-guard.mjs`](./examples/before-payment-guard.mjs):
 
 ```bash
-npm run example:twzrd-guard
+npm run example:before-payment-guard
 ```
 
 #### Using with a Proxy Server (CORS Bypass)

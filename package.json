@@ -63,7 +63,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "npm run build && changeset publish",
-    "example:twzrd-guard": "npm run build && node examples/twzrd-guard.mjs"
+    "example:before-payment-guard": "npm run build && node examples/before-payment-guard.mjs"
   },
   "dependencies": {
     "@payai/facilitator": "^2.2.4",
@@ -88,7 +88,6 @@
     "prettier": "^3.7.4",
     "ts-jest": "^29.4.6",
     "tsup": "^8.5.1",
-    "twzrd-x402-gate": "^0.5.3",
     "typescript": "^5.9.3"
   },
   "engines": {

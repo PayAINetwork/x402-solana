@@ -1,53 +1,32 @@
 #!/usr/bin/env node
 /**
- * Guard-before-sign example: x402-solana + twzrd-x402-gate
+ * Guard-before-sign example for the `beforePayment` hook.
  *
- * Wires a TWZRD trust preflight into the client's `beforePayment` hook so a
- * payment to an untrusted seller is refused BEFORE the wallet ever signs.
+ * Demonstrates the hook's core contract: a policy refusal happens BEFORE the
+ * wallet is ever asked to sign. The policy here is a plain function with no
+ * dependencies - swap it for your own spend rules, allow/deny list, velocity
+ * cap, or a call to whatever reputation service you use.
  *
- * The script is a self-asserting, zero-funds demo:
+ * Self-asserting, zero-funds demo:
  *   - starts a local x402 merchant that returns 402 (v2 PAYMENT-REQUIRED header)
  *   - wraps a signer spy that counts (and fails on) any signTransaction call
- *   - runs the client with strict policy (gateOnCanSpend: true)
- *   - asserts: payment aborted with reason `twzrd_can_spend_false`,
- *     signer invocations === 0, no payment retry sent
+ *   - runs the client with a policy that refuses a non-allowlisted seller
+ *   - asserts: payment aborted, signer invocations === 0, no payment retry sent
  *
- * Run (offline, deterministic - TWZRD intel responses are stubbed):
- *   npm run build && node examples/twzrd-guard.mjs
- *
- * Run against the live TWZRD free preflight (still zero-spend - the preflight
- * is free and the payment is refused before signing):
- *   node examples/twzrd-guard.mjs --live
+ * Run:
+ *   npm run build && node examples/before-payment-guard.mjs
  */
 
 import { createServer } from "node:http";
 import { createX402Client } from "../dist/client/index.mjs";
-import { twzrdBeforePaymentCreation } from "twzrd-x402-gate";
 
-const LIVE = process.argv.includes("--live");
-
-// An unknown seller wallet. The TWZRD free preflight cannot vouch for an
-// unknown wallet (can_spend=false), so strict mode refuses the payment.
 const UNKNOWN_SELLER = "7cVfgArCheMR6Cs4t6vz5rfnqd56vZq4ndaBrY5xkxXy";
 const USDC_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const SOLANA_MAINNET_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
-/** Offline stub of the TWZRD intel API (free preflight + merchant card). */
-const stubbedIntelFetch = async (url) => {
-  const path = new URL(url).pathname;
-  if (path === "/v1/intel/preflight") {
-    return Response.json({
-      readiness_card: {
-        decision: "warn",
-        can_spend: false,
-        trust_score: 41,
-        seller_wallet: UNKNOWN_SELLER,
-      },
-    });
-  }
-  // merchant card: unknown seller, not wash flagged
-  return Response.json({ pay_to: UNKNOWN_SELLER, wash_flagged: false });
-};
+// The payer's policy: only these sellers may be paid, and never above the cap.
+const ALLOWED_SELLERS = new Set(["TrustedMerchant1111111111111111111111111111"]);
+const MAX_AMOUNT_BASE_UNITS = 100_000n; // 0.10 USDC
 
 // --- 1. Local x402 merchant: always answers 402 with v2 requirements -------
 const paymentRequired = {
@@ -68,7 +47,9 @@ const paymentRequired = {
   extensions: {},
 };
 
+let paymentRetries = 0;
 const merchant = createServer((req, res) => {
+  if (req.headers["payment-signature"]) paymentRetries += 1;
   res.writeHead(402, {
     "content-type": "application/json",
     "PAYMENT-REQUIRED": Buffer.from(JSON.stringify(paymentRequired)).toString("base64"),
@@ -89,24 +70,24 @@ const wallet = {
   },
 };
 
-// --- 3. Client with the TWZRD guard in the beforePayment seat --------------
+// --- 3. Client with a payer-owned policy in the beforePayment seat ---------
 const client = createX402Client({
   wallet,
   network: "solana",
-  beforePayment: (requirements, context) =>
-    twzrdBeforePaymentCreation(
-      { ...requirements, resource: requirements.resource ?? context.resourceUrl },
-      {
-        gateOnCanSpend: true, // strict mode: TWZRD must vouch before any signature
-        ...(LIVE ? {} : { fetch: stubbedIntelFetch }),
-      },
-    ),
+  beforePayment: (requirements) => {
+    if (!ALLOWED_SELLERS.has(requirements.payTo)) {
+      return { abort: true, reason: `seller_not_allowlisted:${requirements.payTo}` };
+    }
+    if (BigInt(requirements.maxAmountRequired ?? requirements.amount) > MAX_AMOUNT_BASE_UNITS) {
+      return { abort: true, reason: "amount_above_cap" };
+    }
+    // proceed to signing
+  },
 });
 
 // --- 4. Attempt the payment and assert the contract ------------------------
-console.log(`mode:      ${LIVE ? "LIVE (intel.twzrd.xyz free preflight)" : "offline (stubbed intel)"}`);
 console.log(`merchant:  ${merchantUrl}`);
-console.log(`payTo:     ${UNKNOWN_SELLER} (unknown seller)`);
+console.log(`payTo:     ${UNKNOWN_SELLER} (not allowlisted)`);
 
 let aborted = null;
 try {
@@ -119,11 +100,13 @@ merchant.close();
 
 const pass =
   aborted !== null &&
-  /twzrd/.test(String(aborted.message)) &&
-  signInvocations === 0;
+  /seller_not_allowlisted/.test(String(aborted.message)) &&
+  signInvocations === 0 &&
+  paymentRetries === 0;
 
 console.log(`\ndecision:  ${aborted ? "REFUSED before signing" : "approved"}`);
 if (aborted) console.log(`reason:    ${aborted.message}`);
 console.log(`signer invocations: ${signInvocations}`);
+console.log(`payment retries sent: ${paymentRetries}`);
 console.log(pass ? "\nPASS - payment refused, wallet never signed" : "\nFAIL");
 process.exit(pass ? 0 : 1);
