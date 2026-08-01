@@ -65,6 +65,14 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      # This package publishes via npm trusted publishing (OIDC) — no NPM_TOKEN
+      # secret exists on the repo. OIDC publish requires npm >= 11.5.1, but
+      # Node 22 bundles npm 10.x, which silently falls back to token auth and
+      # dies with ENEEDAUTH. Pinned to a major (not @latest) so a future npm
+      # release with a higher Node floor can't break this job again.
+      - name: Install OIDC-capable npm
+        run: npm install -g npm@11
+
       - name: Setup npm cache
         uses: actions/cache@v4
         with:
