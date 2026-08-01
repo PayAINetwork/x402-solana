@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.5
+
+### Patch Changes
+
+- [#42](https://github.com/PayAINetwork/x402-solana/pull/42) [`c0dc35a`](https://github.com/PayAINetwork/x402-solana/commit/c0dc35a92698ff6e3efa8b64e9f1ce61aabb04ee) Thanks [@notorious-d-e-v](https://github.com/notorious-d-e-v)! - v2 client now echoes the 402 response's `extensions` and `resource` object into the payment payload, as required by the x402 v2 specification. Without the echo, facilitators never received Bazaar discovery declarations, so resources paid through this client were never catalogued (#40, #36). `createPaymentPayload` gains an optional fourth parameter carrying the parsed `PaymentRequired`; existing three-argument callers keep the previous behavior.
+
 ## 2.0.4
 
 ### Added
