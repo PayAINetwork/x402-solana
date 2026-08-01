@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0
+
+### Minor Changes
+
+- [#39](https://github.com/PayAINetwork/x402-solana/pull/39) [`2a41117`](https://github.com/PayAINetwork/x402-solana/commit/2a41117fda59b3b4865149e04c1fbecf89cb9636) Thanks [@twzrd-sol](https://github.com/twzrd-sol)! - Add optional `beforePayment` hook to the client. It runs after a 402 response is parsed and a payment requirement is selected, before the payment transaction is built and signed. Return `{ abort: true, reason }` to refuse the payment - the wallet's `signTransaction` is never invoked and the wrapped fetch throws. Enables drop-in payment policy such as spend rules, allow/deny lists, velocity caps, or a seller reputation preflight. An unhandled throw inside the hook aborts the payment (fail-closed). See the README and `examples/before-payment-guard.mjs`.
+
 ## 2.0.5
 
 ### Patch Changes
