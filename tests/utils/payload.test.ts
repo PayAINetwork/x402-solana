@@ -87,6 +87,87 @@ describe('Payment Payload Creation', () => {
 
       expect(decoded.resource.mimeType).toBe('text/plain');
     });
+
+    // v2 spec: "Servers advertise supported extensions in PaymentRequired, and
+    // clients echo them in PaymentPayload. The client must include at least
+    // the info received." Dropping the echo means facilitators never see
+    // bazaar discovery info and the resource is never catalogued (issue #40).
+    describe('PaymentRequired echo', () => {
+      const bazaarExtensions = {
+        bazaar: {
+          info: {
+            input: { type: 'http', method: 'GET', queryParams: { q: 'string' } },
+            output: { type: 'json' },
+          },
+          schema: { type: 'object' },
+        },
+      };
+
+      const serverResource = {
+        url: 'https://api.example.com/canonical/test',
+        description: 'Server-declared description',
+        mimeType: 'application/json',
+        serviceName: 'Example Service',
+        tags: ['data', 'search'],
+        iconUrl: 'https://api.example.com/icon.png',
+      };
+
+      it('echoes server-declared extensions into the payload', () => {
+        const result = createPaymentPayload(mockTx as never, requirements, resourceUrl, {
+          resource: serverResource,
+          extensions: bazaarExtensions,
+        });
+        const decoded = decodePaymentHeader(result) as {
+          extensions: Record<string, unknown>;
+        };
+
+        expect(decoded.extensions).toEqual(bazaarExtensions);
+      });
+
+      it('echoes the server resource object verbatim, preserving service metadata', () => {
+        const result = createPaymentPayload(mockTx as never, requirements, resourceUrl, {
+          resource: serverResource,
+          extensions: bazaarExtensions,
+        });
+        const decoded = decodePaymentHeader(result) as { resource: typeof serverResource };
+
+        // Verbatim echo — including optional serviceName/tags/iconUrl fields
+        // that are not part of the base ResourceInfo type
+        expect(decoded.resource).toEqual(serverResource);
+      });
+
+      it('omits the extensions key entirely when the server declared none', () => {
+        const result = createPaymentPayload(mockTx as never, requirements, resourceUrl, {
+          resource: serverResource,
+        });
+        const decoded = decodePaymentHeader(result) as Record<string, unknown>;
+
+        expect('extensions' in decoded).toBe(false);
+      });
+
+      it('preserves an explicitly empty extensions object', () => {
+        // {} is a server declaration ("no extensions") and distinct from the
+        // field being absent; echo it as received.
+        const result = createPaymentPayload(mockTx as never, requirements, resourceUrl, {
+          resource: serverResource,
+          extensions: {},
+        });
+        const decoded = decodePaymentHeader(result) as Record<string, unknown>;
+
+        expect(decoded.extensions).toEqual({});
+      });
+
+      it('keeps the synthesized-resource fallback when paymentRequired is not given', () => {
+        const result = createPaymentPayload(mockTx as never, requirements, resourceUrl);
+        const decoded = decodePaymentHeader(result) as {
+          resource: { url: string };
+          extensions?: unknown;
+        };
+
+        expect(decoded.resource.url).toBe(resourceUrl);
+        expect(decoded.extensions).toBeUndefined();
+      });
+    });
   });
 
   describe('createPaymentPayloadV1', () => {

@@ -128,11 +128,15 @@ export function createPaymentFetch(
     let headerName: string;
 
     if (protocolVersion === 2) {
-      // v2: Use PAYMENT-SIGNATURE header with full payload
+      // v2: Use PAYMENT-SIGNATURE header with full payload.
+      // Pass the parsed 402 response so its `resource` object and declared
+      // `extensions` (e.g. bazaar discovery) are echoed into the payload,
+      // as the v2 spec requires.
       paymentHeader = createPaymentPayload(
         signedTransaction,
         selectedRequirements,
         resourceUrl,
+        paymentRequired,
       );
       headerName = "PAYMENT-SIGNATURE";
     } else {
