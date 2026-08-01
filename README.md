@@ -175,6 +175,73 @@ function MyComponent() {
 }
 ```
 
+#### Pre-payment policy hook (beforePayment)
+
+The client accepts an optional `beforePayment` hook that runs after a 402
+response is parsed and a payment requirement is selected, but **before the
+payment transaction is built and signed**. Return `{ abort: true, reason }`
+to refuse the payment - the wallet's `signTransaction` is never called and
+`client.fetch` throws.
+
+Use it for spend rules, allow/deny lists, velocity caps, or a reputation
+preflight on the seller wallet. The hook is a plain function - no dependency
+required:
+
+```typescript
+import { createX402Client } from 'x402-solana/client';
+
+const MAX_AMOUNT_BASE_UNITS = 1_000_000n; // 1 USDC (6 decimals)
+const ALLOWED = new Set(['MerchantWa11et...']);
+const USDC_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const SOLANA_MAINNET = new Set([
+  'solana',
+  'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+]);
+
+const client = createX402Client({
+  wallet,
+  network: 'solana',
+  beforePayment: (requirements) => {
+    if (!ALLOWED.has(requirements.payTo)) {
+      return { abort: true, reason: `seller_not_allowlisted:${requirements.payTo}` };
+    }
+    if (requirements.asset !== USDC_MAINNET) {
+      return { abort: true, reason: 'unsupported_asset' };
+    }
+    if (!SOLANA_MAINNET.has(requirements.network)) {
+      return { abort: true, reason: 'unsupported_network' };
+    }
+    if (BigInt(requirements.amount) > MAX_AMOUNT_BASE_UNITS) {
+      return { abort: true, reason: 'amount_above_cap' };
+    }
+    // return nothing (or { abort: false }) to proceed to signing
+  },
+});
+
+// Refused payments throw BEFORE the wallet signs:
+// "Payment aborted by beforePayment hook: seller_not_allowlisted:..."
+```
+
+The hook may be async, so it can call an external policy or reputation service
+before deciding. It receives a detached snapshot of the selected requirements;
+mutating the snapshot does not change what the client builds, signs, or sends.
+The client's configured `amount` limit is enforced first, so over-limit
+requirements are rejected without invoking the hook. For requirements that
+pass that limit, the hook is the last deterministic checkpoint at which a
+payment can be refused without a signature.
+
+Failure semantics: an unhandled throw inside the hook aborts the payment
+(fail-closed) rather than falling through to a signature. Returning `undefined`
+or `{ abort: false }` proceeds; returning `{ abort: true }` refuses.
+
+A runnable zero-funds demo (local 402 merchant + a signer spy asserting the
+wallet is never invoked on refusal) lives in
+[`examples/before-payment-guard.mjs`](./examples/before-payment-guard.mjs):
+
+```bash
+npm run example:before-payment-guard
+```
+
 #### Using with a Proxy Server (CORS Bypass)
 
 If you're making requests from a browser to external APIs and encountering CORS issues, you can provide a custom fetch function that routes requests through your proxy server:
@@ -561,6 +628,7 @@ Creates a new x402 client instance.
   rpcUrl?: string;                    // Optional custom RPC
   amount?: bigint;                    // Optional safety limit (max payment)
   customFetch?: typeof fetch;         // Optional custom fetch for proxy support
+  beforePayment?: BeforePaymentHook;  // Optional policy hook - abort before signing
   verbose?: boolean;                  // Optional debug logging
 }
 ```

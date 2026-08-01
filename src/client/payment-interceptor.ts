@@ -1,6 +1,11 @@
 import type { PaymentRequirements, PaymentRequired } from "@payai/x402/types";
 import { safeBase64Decode } from "@payai/x402/utils";
-import type { WalletAdapter } from "../types";
+import type {
+  BeforePaymentContext,
+  BeforePaymentHook,
+  BeforePaymentRequirements,
+  WalletAdapter,
+} from "../types";
 import { isSolanaNetwork } from "../types";
 import { createSolanaPaymentTransaction } from "./transaction-builder";
 import { createPaymentPayload, createPaymentPayloadV1 } from "../utils";
@@ -20,6 +25,30 @@ function decodePaymentRequiredHeader(header: string): PaymentRequired {
   return JSON.parse(decoded) as PaymentRequired;
 }
 
+function getRequestSignal(
+  input: RequestInfo,
+  init?: RequestInit,
+): AbortSignal | undefined {
+  return init?.signal ?? (typeof input === "string" ? undefined : input.signal);
+}
+
+function createBeforePaymentSnapshot(
+  requirements: PaymentRequirements,
+): BeforePaymentRequirements {
+  const snapshot = structuredClone(requirements) as Omit<
+    PaymentRequirements,
+    "amount"
+  > & {
+    amount?: string;
+    maxAmountRequired?: string;
+  };
+  const amount = snapshot.amount ?? snapshot.maxAmountRequired;
+  if (!amount) {
+    throw new Error("Missing amount in payment requirements");
+  }
+  return { ...snapshot, amount };
+}
+
 /**
  * Create a custom fetch function that automatically handles x402 payments (v2)
  *
@@ -28,6 +57,7 @@ function decodePaymentRequiredHeader(header: string): PaymentRequired {
  * @param rpcUrl - Solana RPC URL
  * @param maxValue - Maximum payment amount in atomic units (0 = no limit)
  * @param verbose - Enable verbose logging (default: false)
+ * @param beforePayment - Optional hook run after requirement selection, before signing
  * @returns Wrapped fetch function with automatic payment handling
  */
 export function createPaymentFetch(
@@ -36,17 +66,21 @@ export function createPaymentFetch(
   rpcUrl: string,
   maxValue: bigint = BigInt(0),
   verbose: boolean = false,
+  beforePayment?: BeforePaymentHook,
 ) {
   const log = (...args: unknown[]) => {
     if (verbose) console.log("[x402-solana]", ...args);
   };
 
   return async (input: RequestInfo, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === "string" ? input : input.url;
-    log("Making initial request to:", url);
+    const requestUrl = typeof input === "string" ? input : input.url;
+    const signal = getRequestSignal(input, init);
+    signal?.throwIfAborted();
+    log("Making initial request to:", requestUrl);
 
     // Make initial request
     const response = await fetchFn(input, init);
+    signal?.throwIfAborted();
     log("Initial response status:", response.status);
 
     // If not 402, return as-is
@@ -110,17 +144,45 @@ export function createPaymentFetch(
       throw new Error("Payment amount exceeds maximum allowed");
     }
 
-    // Get the resource URL for the payment payload
-    const resourceUrl = typeof input === "string" ? input : input.url;
+    // Run the beforePayment hook (if configured) BEFORE building/signing.
+    // Give policy code a detached snapshot so it cannot mutate the canonical
+    // requirements used to build the transaction and payment payload.
+    if (beforePayment) {
+      log("Running beforePayment hook...");
+      signal?.throwIfAborted();
+      const context: BeforePaymentContext = {
+        requestUrl,
+        responseUrl: response.url || requestUrl,
+        protocolVersion,
+        ...(paymentRequired.resource === undefined
+          ? {}
+          : { declaredResource: paymentRequired.resource }),
+        ...(signal === undefined ? {} : { signal }),
+      };
+      const decision = await beforePayment(
+        createBeforePaymentSnapshot(selectedRequirements),
+        context,
+      );
+      signal?.throwIfAborted();
+      if (decision && decision.abort === true) {
+        const reason = decision.reason || "beforePayment hook aborted payment";
+        log("Payment aborted by beforePayment hook:", reason);
+        throw new Error(`Payment aborted by beforePayment hook: ${reason}`);
+      }
+      log("beforePayment hook approved, continuing...");
+    }
 
     log("Creating signed transaction...");
+    signal?.throwIfAborted();
 
     // Create signed transaction
     const signedTransaction = await createSolanaPaymentTransaction(
       wallet,
       selectedRequirements,
       rpcUrl,
+      signal,
     );
+    signal?.throwIfAborted();
     log("Transaction signed successfully");
 
     // Create payment payload based on protocol version
@@ -135,7 +197,7 @@ export function createPaymentFetch(
       paymentHeader = createPaymentPayload(
         signedTransaction,
         selectedRequirements,
-        resourceUrl,
+        requestUrl,
         paymentRequired,
       );
       headerName = "PAYMENT-SIGNATURE";
@@ -161,6 +223,7 @@ export function createPaymentFetch(
     };
 
     log(`Retrying request with ${headerName} header...`);
+    signal?.throwIfAborted();
     const retryResponse = await fetchFn(input, newInit);
     log("Retry response status:", retryResponse.status);
 

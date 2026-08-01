@@ -1,5 +1,6 @@
-import type { VersionedTransaction } from '@solana/web3.js';
-import type { SolanaNetworkSimple } from './x402-protocol';
+import type { VersionedTransaction } from "@solana/web3.js";
+import type { PaymentRequirements, PaymentRequired } from "@payai/x402/types";
+import type { SolanaNetworkSimple } from "./x402-protocol";
 
 /**
  * Solana-specific payment types (v2)
@@ -17,6 +18,60 @@ export interface WalletAdapter {
   /** Sign a transaction - required for payment */
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 }
+
+/**
+ * Decision returned by a beforePayment hook.
+ * Return `{ abort: true }` (optionally with a reason) to refuse the payment
+ * before any transaction is built or signed. Return `void` / `{ abort: false }`
+ * to proceed.
+ */
+export type BeforePaymentDecision =
+  | { abort: true; reason?: string }
+  | { abort?: false }
+  | void;
+
+/**
+ * Detached policy view of the selected payment requirements.
+ *
+ * `amount` is normalized from the legacy v1 `maxAmountRequired` field when
+ * necessary. The canonical requirements used to build and sign the payment
+ * are not modified.
+ */
+export type BeforePaymentRequirements = Omit<PaymentRequirements, "amount"> & {
+  amount: string;
+  maxAmountRequired?: string;
+};
+
+/**
+ * Context passed to a beforePayment hook alongside the selected requirements.
+ */
+export interface BeforePaymentContext {
+  /** URL originally requested by the caller */
+  requestUrl: string;
+  /** Final response URL, when the fetch implementation exposes one */
+  responseUrl: string;
+  /** Resource declared by the server's payment-required payload, if present */
+  declaredResource?: PaymentRequired["resource"];
+  /** x402 protocol version parsed from the 402 response */
+  protocolVersion: 1 | 2;
+  /** Caller signal; policy code may use it to cancel external checks */
+  signal?: AbortSignal;
+}
+
+/**
+ * Hook invoked after a 402 response is parsed and a payment requirement is
+ * selected, but BEFORE the payment transaction is built and signed.
+ *
+ * Use it to plug in payment policy: spend rules, allow/deny lists, or a
+ * trust/reputation preflight on the payTo wallet. The hook receives a detached
+ * snapshot; mutating it does not change the requirements used for payment.
+ * The client's configured amount limit is enforced before this hook runs.
+ * Thrown errors propagate and abort the payment.
+ */
+export type BeforePaymentHook = (
+  requirements: BeforePaymentRequirements,
+  context: BeforePaymentContext,
+) => Promise<BeforePaymentDecision> | BeforePaymentDecision;
 
 /**
  * Client configuration for x402 Solana client
@@ -38,6 +93,13 @@ export interface X402ClientConfig {
    * @default globalThis.fetch
    */
   customFetch?: typeof fetch;
+  /**
+   * Optional hook invoked after payment requirements are parsed from a 402
+   * response and BEFORE the payment transaction is built and signed.
+   * Return `{ abort: true, reason }` to refuse the payment - the wallet's
+   * signTransaction is never called and the wrapped fetch throws.
+   */
+  beforePayment?: BeforePaymentHook;
   /** Enable verbose logging for debugging (default: false) */
   verbose?: boolean;
 }

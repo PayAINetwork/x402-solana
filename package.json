@@ -62,7 +62,8 @@
     "prepublishOnly": "npm run clean && npm run build && npm run typecheck",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "npm run build && changeset publish"
+    "release": "npm run build && changeset publish",
+    "example:before-payment-guard": "npm run build && node examples/before-payment-guard.mjs"
   },
   "dependencies": {
     "@payai/facilitator": "^2.2.4",

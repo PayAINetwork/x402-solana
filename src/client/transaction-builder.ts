@@ -26,12 +26,14 @@ const DEFAULT_COMPUTE_UNIT_PRICE_MICROLAMPORTS = 1; // Minimal price
  * @param wallet - Wallet adapter for signing
  * @param paymentRequirements - Payment requirements from server
  * @param rpcUrl - Solana RPC URL
+ * @param signal - Optional caller cancellation signal
  * @returns Signed VersionedTransaction ready to be serialized
  */
 export async function createSolanaPaymentTransaction(
   wallet: WalletAdapter,
   paymentRequirements: PaymentRequirements,
   rpcUrl: string,
+  signal?: AbortSignal,
 ): Promise<VersionedTransaction> {
   const connection = new Connection(rpcUrl, "confirmed");
 
@@ -163,6 +165,7 @@ export async function createSolanaPaymentTransaction(
     throw new Error("Connected wallet does not support signTransaction");
   }
 
+  signal?.throwIfAborted();
   const userSignedTx = await wallet.signTransaction(transaction);
 
   return userSignedTx;

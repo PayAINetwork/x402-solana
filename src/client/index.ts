@@ -22,6 +22,7 @@ export class X402Client {
       rpcUrl,
       config.amount || BigInt(0),
       config.verbose || false,
+      config.beforePayment,
     );
   }
 
@@ -42,4 +43,11 @@ export function createX402Client(config: X402ClientConfig): X402Client {
 }
 
 // Re-export types for convenience
-export type { X402ClientConfig, WalletAdapter } from "../types";
+export type {
+  X402ClientConfig,
+  WalletAdapter,
+  BeforePaymentRequirements,
+  BeforePaymentHook,
+  BeforePaymentDecision,
+  BeforePaymentContext,
+} from "../types";
