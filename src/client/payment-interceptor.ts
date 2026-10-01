@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import { isSolanaNetwork } from "../types";
 import { createSolanaPaymentTransaction } from "./transaction-builder";
+import { getValidatedPaymentAmount } from "./payment-amount";
 import { createPaymentPayload, createPaymentPayloadV1 } from "../utils";
 
 /**
@@ -34,19 +35,14 @@ function getRequestSignal(
 
 function createBeforePaymentSnapshot(
   requirements: PaymentRequirements,
+  amount: bigint,
 ): BeforePaymentRequirements {
   const snapshot = structuredClone(requirements) as Omit<
     PaymentRequirements,
     "amount"
-  > & {
-    amount?: string;
-    maxAmountRequired?: string;
-  };
-  const amount = snapshot.amount ?? snapshot.maxAmountRequired;
-  if (!amount) {
-    throw new Error("Missing amount in payment requirements");
-  }
-  return { ...snapshot, amount };
+  >;
+  // Expose the validated amount that will actually be signed.
+  return { ...snapshot, amount: amount.toString() };
 }
 
 /**
@@ -55,7 +51,8 @@ function createBeforePaymentSnapshot(
  * @param fetchFn - Base fetch function to use
  * @param wallet - Wallet adapter for signing transactions
  * @param rpcUrl - Solana RPC URL
- * @param maxValue - Maximum payment amount in atomic units (0 = no limit)
+ * @param maxValue - Maximum payment amount in atomic units. 0 (the default) means
+ *   no limit; negative values are rejected.
  * @param verbose - Enable verbose logging (default: false)
  * @param beforePayment - Optional hook run after requirement selection, before signing
  * @returns Wrapped fetch function with automatic payment handling
@@ -71,6 +68,10 @@ export function createPaymentFetch(
   const log = (...args: unknown[]) => {
     if (verbose) console.log("[x402-solana]", ...args);
   };
+
+  if (maxValue < BigInt(0)) {
+    throw new Error("maxValue must be 0 (no limit) or a positive amount");
+  }
 
   return async (input: RequestInfo, init?: RequestInit): Promise<Response> => {
     const requestUrl = typeof input === "string" ? input : input.url;
@@ -131,14 +132,11 @@ export function createPaymentFetch(
       throw new Error("No suitable Solana payment requirements found");
     }
 
-    // Check amount against max value if specified
+    // Validate the amount strictly before any cap check or signing.
     // v2 uses `amount`, but we also support legacy `maxAmountRequired` for backwards compatibility
-    const paymentAmount = BigInt(
-      selectedRequirements.amount ||
-        (selectedRequirements as unknown as { maxAmountRequired?: string })
-          .maxAmountRequired ||
-        "0",
-    );
+    const paymentAmount = getValidatedPaymentAmount(selectedRequirements);
+
+    // Check amount against max value if specified
 
     if (maxValue > BigInt(0) && paymentAmount > maxValue) {
       throw new Error("Payment amount exceeds maximum allowed");
@@ -160,7 +158,7 @@ export function createPaymentFetch(
         ...(signal === undefined ? {} : { signal }),
       };
       const decision = await beforePayment(
-        createBeforePaymentSnapshot(selectedRequirements),
+        createBeforePaymentSnapshot(selectedRequirements, paymentAmount),
         context,
       );
       signal?.throwIfAborted();

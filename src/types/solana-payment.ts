@@ -83,7 +83,10 @@ export interface X402ClientConfig {
   network: SolanaNetworkSimple;
   /** Custom RPC URL (defaults to public endpoint) */
   rpcUrl?: string;
-  /** Maximum payment amount in atomic units (0 = no limit) */
+  /**
+   * Maximum payment amount in atomic units. Omitted or 0 means no limit;
+   * negative values are rejected.
+   */
   amount?: bigint;
   /**
    * Optional custom fetch function for making HTTP requests.
