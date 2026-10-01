@@ -225,8 +225,12 @@ const client = createX402Client({
 The hook may be async, so it can call an external policy or reputation service
 before deciding. It receives a detached snapshot of the selected requirements;
 mutating the snapshot does not change what the client builds, signs, or sends.
-The client's configured `amount` limit is enforced first, so over-limit
-requirements are rejected without invoking the hook. For requirements that
+The client validates the selected amount first: it must be a positive
+base-10 integer string in atomic units that fits in a u64, otherwise the
+payment is refused before the hook runs or anything is signed. The hook's
+`requirements.amount` is always that validated value. The configured `amount`
+limit is enforced next, so over-limit requirements are also rejected without
+invoking the hook. For requirements that
 pass that limit, the hook is the last deterministic checkpoint at which a
 payment can be refused without a signature.
 
@@ -626,7 +630,7 @@ Creates a new x402 client instance.
   wallet: WalletAdapter;              // Wallet with signTransaction method
   network: 'solana' | 'solana-devnet'; // Simple network format
   rpcUrl?: string;                    // Optional custom RPC
-  amount?: bigint;                    // Optional safety limit (max payment)
+  amount?: bigint;                    // Optional safety limit (max payment); omitted or 0 = no limit
   customFetch?: typeof fetch;         // Optional custom fetch for proxy support
   beforePayment?: BeforePaymentHook;  // Optional policy hook - abort before signing
   verbose?: boolean;                  // Optional debug logging

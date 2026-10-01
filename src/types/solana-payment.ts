@@ -33,9 +33,10 @@ export type BeforePaymentDecision =
 /**
  * Detached policy view of the selected payment requirements.
  *
- * `amount` is normalized from the legacy v1 `maxAmountRequired` field when
- * necessary. The canonical requirements used to build and sign the payment
- * are not modified.
+ * `amount` is the validated amount that will be signed, normalized from the
+ * legacy v1 `maxAmountRequired` field when necessary; if present,
+ * `maxAmountRequired` carries the same value. The canonical requirements used
+ * to build and sign the payment are not modified.
  */
 export type BeforePaymentRequirements = Omit<PaymentRequirements, "amount"> & {
   amount: string;
@@ -83,7 +84,10 @@ export interface X402ClientConfig {
   network: SolanaNetworkSimple;
   /** Custom RPC URL (defaults to public endpoint) */
   rpcUrl?: string;
-  /** Maximum payment amount in atomic units (0 = no limit) */
+  /**
+   * Maximum payment amount in atomic units. Omitted or 0 means no limit;
+   * negative values are rejected.
+   */
   amount?: bigint;
   /**
    * Optional custom fetch function for making HTTP requests.

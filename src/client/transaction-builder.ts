@@ -15,6 +15,7 @@ import {
 } from "@solana/spl-token";
 import type { PaymentRequirements } from "@x402/core/types";
 import type { WalletAdapter } from "../types";
+import { getValidatedPaymentAmount } from "./payment-amount";
 
 // Constants for compute budget
 const DEFAULT_COMPUTE_UNIT_LIMIT = 20_000; // Sufficient for SPL token transfer
@@ -35,6 +36,10 @@ export async function createSolanaPaymentTransaction(
   rpcUrl: string,
   signal?: AbortSignal,
 ): Promise<VersionedTransaction> {
+  // Validate the amount before any RPC or signing - v2 uses `amount`,
+  // legacy `maxAmountRequired` is supported for compatibility
+  const amount = getValidatedPaymentAmount(paymentRequirements);
+
   const connection = new Connection(rpcUrl, "confirmed");
 
   // Extract fee payer from payment requirements
@@ -123,16 +128,6 @@ export async function createSolanaPaymentTransaction(
     );
   }
 
-  // Get payment amount - v2 uses `amount`, support legacy `maxAmountRequired` for compatibility
-  const amountStr =
-    paymentRequirements.amount ||
-    (paymentRequirements as unknown as { maxAmountRequired?: string })
-      .maxAmountRequired;
-
-  if (!amountStr) {
-    throw new Error("Missing amount in payment requirements");
-  }
-  const amount = BigInt(amountStr);
 
   // TransferChecked instruction
   instructions.push(
