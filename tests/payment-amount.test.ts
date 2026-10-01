@@ -8,7 +8,8 @@
  *   not a maxValue limit is configured
  */
 
-import type { VersionedTransaction } from '@solana/web3.js';
+import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
+import { MintLayout, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import type { PaymentRequirements } from '@x402/core/types';
 import { createX402Client } from '../src/client';
 import { getValidatedPaymentAmount } from '../src/client/payment-amount';
@@ -107,6 +108,24 @@ describe('getValidatedPaymentAmount', () => {
   it.each(INVALID_AMOUNTS)('rejects %s in legacy maxAmountRequired', (_label, maxAmountRequired) => {
     expect(() =>
       getValidatedPaymentAmount(requirementsWith({ maxAmountRequired })),
+    ).toThrow(/Invalid amount in payment requirements/);
+  });
+
+  it('uses legacy maxAmountRequired only when amount is absent or empty', () => {
+    expect(
+      getValidatedPaymentAmount(requirementsWith({ amount: '', maxAmountRequired: '700' })),
+    ).toBe(BigInt(700));
+    expect(
+      getValidatedPaymentAmount(requirementsWith({ amount: '5', maxAmountRequired: '-1' })),
+    ).toBe(BigInt(5));
+  });
+
+  it('does not fall back to maxAmountRequired when amount is present but invalid', () => {
+    expect(() =>
+      getValidatedPaymentAmount(requirementsWith({ amount: '0', maxAmountRequired: '700' })),
+    ).toThrow(/Invalid amount in payment requirements/);
+    expect(() =>
+      getValidatedPaymentAmount(requirementsWith({ amount: '-5', maxAmountRequired: '700' })),
     ).toThrow(/Invalid amount in payment requirements/);
   });
 
@@ -247,6 +266,71 @@ describe('payment flow amount validation', () => {
     expect(requirements.amount).toBe('500');
   });
 
+  it('gives the beforePayment hook the validated value in maxAmountRequired too', async () => {
+    const hook = jest.fn();
+    const customFetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createV2PaymentRequiredResponse({
+          ...v2PaymentRequired,
+          accepts: [
+            { ...v2PaymentRequired.accepts[0], amount: '100000', maxAmountRequired: '1' },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(createSuccessResponse());
+
+    const client = createX402Client({
+      wallet: mockWallet,
+      network: 'solana-devnet',
+      customFetch: customFetch as unknown as typeof fetch,
+      beforePayment: hook,
+    });
+
+    await client.fetch(TEST_URL);
+
+    const [requirements] = hook.mock.calls[0] as Parameters<BeforePaymentHook>;
+    expect(requirements.amount).toBe('100000');
+    expect(requirements.maxAmountRequired).toBe('100000');
+  });
+
+  it('fails closed on an invalid first Solana requirement instead of trying later ones', async () => {
+    const customFetch = jest.fn().mockResolvedValueOnce(
+      createV2PaymentRequiredResponse({
+        ...v2PaymentRequired,
+        accepts: [
+          { ...v2PaymentRequired.accepts[0], amount: '-1' },
+          { ...v2PaymentRequired.accepts[0], amount: '1000' },
+        ],
+      }),
+    );
+
+    const client = createX402Client({
+      wallet: mockWallet,
+      network: 'solana-devnet',
+      customFetch: customFetch as unknown as typeof fetch,
+    });
+
+    await expect(client.fetch(TEST_URL)).rejects.toThrow(
+      /Invalid amount in payment requirements/,
+    );
+    expect(mockBuildAndSign).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['string', 'abc'],
+    ['number', 100000],
+    ['NaN', Number.NaN],
+  ])('rejects a non-bigint maxValue (%s) instead of treating it as unlimited', (_label, amount) => {
+    expect(() =>
+      createX402Client({
+        wallet: mockWallet,
+        network: 'solana-devnet',
+        amount: amount as unknown as bigint,
+      }),
+    ).toThrow('maxValue must be 0 (no limit) or a positive amount');
+  });
+
   it('rejects a negative maxValue instead of treating it as unlimited', () => {
     expect(() =>
       createX402Client({
@@ -274,6 +358,66 @@ describe('createSolanaPaymentTransaction amount validation', () => {
         ),
       ).rejects.toThrow(/Invalid amount in payment requirements/);
       expect(signTransaction).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('createSolanaPaymentTransaction signed amount', () => {
+  const mintData = Buffer.alloc(MintLayout.span);
+  MintLayout.encode(
+    {
+      mintAuthorityOption: 0,
+      mintAuthority: Keypair.generate().publicKey,
+      supply: BigInt(0),
+      decimals: 6,
+      isInitialized: true,
+      freezeAuthorityOption: 0,
+      freezeAuthority: Keypair.generate().publicKey,
+    },
+    mintData,
+  );
+
+  beforeEach(() => {
+    jest.spyOn(Connection.prototype, 'getAccountInfo').mockResolvedValue({
+      owner: TOKEN_PROGRAM_ID,
+      data: mintData,
+      lamports: 1,
+      executable: false,
+    });
+    jest.spyOn(Connection.prototype, 'getLatestBlockhash').mockResolvedValue({
+      blockhash: Keypair.generate().publicKey.toBase58(),
+      lastValidBlockHeight: 1,
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it.each(['1', '100000', U64_MAX])(
+    'encodes exactly the validated amount %s in TransferChecked',
+    async (amount) => {
+      const signer = Keypair.generate().publicKey.toBase58();
+      const signTransaction = jest.fn(async (tx: VersionedTransaction) => tx);
+      const requirements = {
+        ...v2PaymentRequired.accepts[0],
+        amount,
+        asset: Keypair.generate().publicKey.toBase58(),
+        payTo: Keypair.generate().publicKey.toBase58(),
+        extra: { feePayer: Keypair.generate().publicKey.toBase58() },
+      } as unknown as PaymentRequirements;
+
+      const tx = await realBuildAndSign(
+        { address: signer, signTransaction },
+        requirements,
+        'http://127.0.0.1:1',
+      );
+
+      expect(signTransaction).toHaveBeenCalledTimes(1);
+      const transfer = tx.message.compiledInstructions[2];
+      const data = Buffer.from(transfer.data);
+      expect(data[0]).toBe(12); // TransferChecked
+      expect(data.readBigUInt64LE(1)).toBe(BigInt(amount));
     },
   );
 });

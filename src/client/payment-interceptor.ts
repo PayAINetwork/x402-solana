@@ -40,9 +40,19 @@ function createBeforePaymentSnapshot(
   const snapshot = structuredClone(requirements) as Omit<
     PaymentRequirements,
     "amount"
-  >;
-  // Expose the validated amount that will actually be signed.
-  return { ...snapshot, amount: amount.toString() };
+  > & {
+    maxAmountRequired?: string;
+  };
+  // Expose only the validated amount that will actually be signed, including
+  // in the legacy field so policy code cannot read a different raw value.
+  const validatedAmount = amount.toString();
+  return {
+    ...snapshot,
+    amount: validatedAmount,
+    ...(snapshot.maxAmountRequired === undefined
+      ? {}
+      : { maxAmountRequired: validatedAmount }),
+  };
 }
 
 /**
@@ -69,7 +79,7 @@ export function createPaymentFetch(
     if (verbose) console.log("[x402-solana]", ...args);
   };
 
-  if (maxValue < BigInt(0)) {
+  if (typeof maxValue !== "bigint" || maxValue < BigInt(0)) {
     throw new Error("maxValue must be 0 (no limit) or a positive amount");
   }
 
@@ -119,18 +129,22 @@ export function createPaymentFetch(
 
     // Select first suitable payment requirement for Solana
     // Supports both simple format ("solana", "solana-devnet") and CAIP-2 format ("solana:chainId")
-    const selectedRequirements = parsedPaymentRequirements.find(
+    const matchedRequirements = parsedPaymentRequirements.find(
       (req: PaymentRequirements) =>
         req.scheme === "exact" && isSolanaNetwork(req.network),
     );
 
-    if (!selectedRequirements) {
+    if (!matchedRequirements) {
       console.error(
         "❌ No suitable Solana payment requirements found. Available networks:",
         parsedPaymentRequirements.map((req) => req.network),
       );
       throw new Error("No suitable Solana payment requirements found");
     }
+
+    // Work on a private copy so the requirements that are validated and
+    // capped are exactly the ones that get built, signed, and echoed.
+    const selectedRequirements = structuredClone(matchedRequirements);
 
     // Validate the amount strictly before any cap check or signing.
     // v2 uses `amount`, but we also support legacy `maxAmountRequired` for backwards compatibility
