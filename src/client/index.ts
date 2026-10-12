@@ -30,7 +30,7 @@ export class X402Client {
    * Make a fetch request with automatic x402 payment handling.
    * If a customFetch was provided in the config, it will be used for all requests.
    */
-  async fetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     return this.paymentFetch(input, init);
   }
 }

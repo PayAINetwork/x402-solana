@@ -26,11 +26,19 @@ function decodePaymentRequiredHeader(header: string): PaymentRequired {
   return JSON.parse(decoded) as PaymentRequired;
 }
 
+function isRequest(input: RequestInfo | URL): input is Request {
+  return (
+    typeof input !== "string" &&
+    "clone" in input &&
+    typeof input.clone === "function"
+  );
+}
+
 function getRequestSignal(
-  input: RequestInfo,
+  input: RequestInfo | URL,
   init?: RequestInit,
 ): AbortSignal | undefined {
-  return init?.signal ?? (typeof input === "string" ? undefined : input.signal);
+  return init?.signal ?? (isRequest(input) ? input.signal : undefined);
 }
 
 function createBeforePaymentSnapshot(
@@ -83,8 +91,12 @@ export function createPaymentFetch(
     throw new Error("maxValue must be 0 (no limit) or a positive amount");
   }
 
-  return async (input: RequestInfo, init?: RequestInit): Promise<Response> => {
-    const requestUrl = typeof input === "string" ? input : input.url;
+  const fetchWithPayment = async (
+    input: RequestInfo | URL,
+    init: RequestInit | undefined,
+    retryInput: RequestInfo | URL,
+  ): Promise<Response> => {
+    const requestUrl = isRequest(input) ? input.url : input.toString();
     const signal = getRequestSignal(input, init);
     signal?.throwIfAborted();
     log("Making initial request to:", requestUrl);
@@ -97,6 +109,17 @@ export function createPaymentFetch(
     // If not 402, return as-is
     if (response.status !== 402) {
       return response;
+    }
+
+    // A one-shot body in init cannot be resent. Reject before wallet signing;
+    // streams wrapped in a Request can be replayed using the retained clone.
+    if (
+      typeof ReadableStream !== "undefined" &&
+      init?.body instanceof ReadableStream
+    ) {
+      throw new TypeError(
+        "Cannot retry a ReadableStream passed as init.body. Pass a Request or a replayable body instead.",
+      );
     }
 
     log("Got 402, parsing payment requirements...");
@@ -184,6 +207,18 @@ export function createPaymentFetch(
       log("beforePayment hook approved, continuing...");
     }
 
+    // Validate retry headers before asking the wallet to sign. init.headers
+    // replaces Request headers, matching native fetch semantics.
+    const originalHeaders =
+      init?.headers ?? (isRequest(input) ? input.headers : undefined);
+    const retryHeaders = new Headers(originalHeaders);
+    // Preserve plain-object key casing for existing customFetch adapters.
+    const originalNames = new Map(
+      Object.keys(originalHeaders ?? {}).map(
+        (name) => [name.toLowerCase(), name] as const,
+      ),
+    );
+
     log("Creating signed transaction...");
     signal?.throwIfAborted();
 
@@ -226,19 +261,48 @@ export function createPaymentFetch(
     log("Using header:", headerName);
 
     // Retry with appropriate payment header
+    // Remove any existing spelling before adding the new payment header.
+    retryHeaders.delete(headerName);
+    const headerEntries: [string, string][] = [[headerName, paymentHeader]];
+    retryHeaders.forEach((value, name) => {
+      headerEntries.push([originalNames.get(name) ?? name, value]);
+    });
     const newInit = {
       ...init,
-      headers: {
-        ...(init?.headers || {}),
-        [headerName]: paymentHeader,
-      },
+      headers: Object.fromEntries(headerEntries),
     };
 
     log(`Retrying request with ${headerName} header...`);
     signal?.throwIfAborted();
-    const retryResponse = await fetchFn(input, newInit);
+    const retryResponse = await fetchFn(retryInput, newInit);
     log("Retry response status:", retryResponse.status);
 
     return retryResponse;
+  };
+
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    getRequestSignal(input, init)?.throwIfAborted();
+    // Native fetch consumes a Request's body. Keep a copy before sending it,
+    // unless init.body replaces that body or there is no body to consume.
+    const retryInput =
+      isRequest(input) && input.body !== null && init?.body == null
+        ? input.clone()
+        : input;
+    try {
+      return await fetchWithPayment(input, init, retryInput);
+    } finally {
+      // Drop the unread branch on non-402, policy rejection and other errors.
+      // Do not await tee cancellation: its promise can wait for the other body.
+      if (
+        isRequest(retryInput) &&
+        retryInput !== input &&
+        !retryInput.bodyUsed
+      ) {
+        void retryInput.body?.cancel().catch(() => {});
+      }
+    }
   };
 }

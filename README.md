@@ -641,6 +641,24 @@ Creates a new x402 client instance.
 
 - `client.fetch(input, init)` - Make a fetch request with automatic payment handling
 
+The client accepts a URL string, a `URL`, or a `Request`. On a payment retry it
+preserves the request body and headers and replaces the appropriate payment
+header. As with native `fetch`, `init.headers` replaces headers from a `Request`.
+
+Use a replayable `init.body` such as a string, `Blob`, `ArrayBuffer`, or `FormData`.
+A `ReadableStream` passed directly as `init.body` can be sent once, but if the
+server returns 402 the client rejects it before wallet signing. For a bounded
+stream that needs a payment retry, pass a `Request` containing the body instead.
+Cloning a `Request` can buffer its entire body in memory, so avoid this approach
+for large or unbounded uploads. Unused retry clones are cancelled when the call
+returns or fails.
+
+Custom fetch adapters receive a plain header object on the retry. Plain-object
+header names retain their casing; names from `Headers` or tuple arrays may be
+normalized. Read header names case-insensitively, as with native `fetch`.
+Retry header names and values are validated with `Headers` before signing, even
+when a custom fetch adapter is used.
+
 ### Server
 
 #### new X402PaymentHandler(config)
