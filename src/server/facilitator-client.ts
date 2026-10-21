@@ -22,6 +22,49 @@ interface SupportedKind {
 }
 
 /**
+ * errorReason for a settlement that was broadcast but is not confirmed yet.
+ * Not terminal: the payment may still land, so do not ask the buyer to pay again.
+ */
+export const SETTLEMENT_PENDING = 'settlement_pending';
+
+/**
+ * A SettleResponse whose settlement is still unresolved
+ */
+export type PendingSettleResponse = SettleResponse & {
+  success: false;
+  errorReason: typeof SETTLEMENT_PENDING;
+};
+
+/**
+ * Check whether a settle result is pending rather than failed.
+ * `transaction` carries the broadcast hash when the facilitator sent one.
+ */
+export function isSettlementPending(result: SettleResponse): result is PendingSettleResponse {
+  return !result.success && result.errorReason === SETTLEMENT_PENDING;
+}
+
+/**
+ * Read a facilitator SettleResponse out of a non-2xx /settle body.
+ * Returns null when the body is not a JSON object with a boolean `success`.
+ */
+function parseSettleErrorBody(body: string): Partial<Record<keyof SettleResponse, unknown>> | null {
+  try {
+    const data: unknown = JSON.parse(body);
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      !Array.isArray(data) &&
+      typeof (data as { success?: unknown }).success === 'boolean'
+    ) {
+      return data as Partial<Record<keyof SettleResponse, unknown>>;
+    }
+  } catch {
+    // Not JSON
+  }
+  return null;
+}
+
+/**
  * Configuration for the facilitator client
  */
 interface FacilitatorClientConfig {
@@ -192,10 +235,21 @@ export class FacilitatorClient {
       if (!response.ok) {
         const errorBody = await response.text();
         console.error(`Facilitator /settle returned ${response.status}:`, errorBody);
+        // Some facilitators answer settlement_pending with a non-2xx status
+        // (x402-foundation/x402#3778). Keep the reason and the broadcast hash
+        // so the caller can reconcile instead of asking the buyer to sign again.
+        const settleError = parseSettleErrorBody(errorBody);
         return {
           success: false,
-          errorReason: 'unexpected_settle_error',
-          transaction: '',
+          errorReason:
+            typeof settleError?.errorReason === 'string'
+              ? settleError.errorReason
+              : 'unexpected_settle_error',
+          ...(typeof settleError?.errorMessage === 'string'
+            ? { errorMessage: settleError.errorMessage }
+            : {}),
+          ...(typeof settleError?.payer === 'string' ? { payer: settleError.payer } : {}),
+          transaction: typeof settleError?.transaction === 'string' ? settleError.transaction : '',
           network: paymentRequirements.network,
         };
       }
