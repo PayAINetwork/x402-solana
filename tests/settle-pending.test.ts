@@ -309,3 +309,100 @@ describe('purchase flow when the facilitator answers settlement_pending with HTT
     expect(mockBuildAndSign).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('retrying /settle for the same payment', () => {
+  beforeEach(() => {
+    mockBuildAndSign.mockReset();
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  /**
+   * A seller that credits only on success and retries /settle with the same
+   * payment header while the outcome is unresolved.
+   */
+  function createSettler() {
+    const x402 = new X402PaymentHandler({
+      network: 'solana-devnet',
+      treasuryAddress: 'RecipientWalletAddress123456789012345678901',
+      facilitatorUrl: FACILITATOR_URL,
+    });
+    const credited: string[] = [];
+
+    const settle = async () => {
+      const settlement = await x402.settlePayment(paymentHeader, requirements);
+      if (settlement.success) credited.push(settlement.transaction);
+      return settlement;
+    };
+
+    return { settle, credited };
+  }
+
+  /** Answer each /settle with the next response and record the request bodies. */
+  function mockSettleSequence(responses: Array<() => Response>): { bodies: string[] } {
+    const bodies: string[] = [];
+    const spy = mockFacilitator(() => {
+      const next = responses.shift();
+      if (!next) throw new Error('unexpected extra /settle call');
+      return next();
+    });
+    const route = spy.getMockImplementation()!;
+    spy.mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (url.endsWith('/settle')) bodies.push(String(init?.body));
+      return route(input, init);
+    });
+    return { bodies };
+  }
+
+  it('credits a pending payment once, on the final success, with the same hash', async () => {
+    const { bodies } = mockSettleSequence([
+      () => jsonResponse(500, pendingBody),
+      () => jsonResponse(200, { success: true, transaction: TX_HASH, network: DEVNET }),
+    ]);
+    const seller = createSettler();
+
+    const first = await seller.settle();
+    expect(isSettlementPending(first)).toBe(true);
+    expect(first.transaction).toBe(TX_HASH);
+    expect(seller.credited).toEqual([]);
+
+    const second = await seller.settle();
+    expect(second.success).toBe(true);
+    expect(second.transaction).toBe(TX_HASH);
+
+    expect(seller.credited).toEqual([TX_HASH]);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(mockBuildAndSign).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, () => Response]>([
+    ['a 503 with no body', () => new Response(null, { status: 503 })],
+    ['a non-JSON page', () => new Response('<html>Bad Gateway</html>', { status: 502 })],
+    ['a truncated body', () => new Response('{"success":false,"transac', { status: 500 })],
+  ])('keeps the payment retryable after %s and credits it once', async (_name, bad) => {
+    mockSettleSequence([
+      bad,
+      () => jsonResponse(200, { success: true, transaction: TX_HASH, network: DEVNET }),
+    ]);
+    const seller = createSettler();
+
+    const first = await seller.settle();
+    expect(first).toEqual({
+      success: false,
+      errorReason: 'unexpected_settle_error',
+      transaction: '',
+      network: requirements.network,
+    });
+    expect(seller.credited).toEqual([]);
+
+    const second = await seller.settle();
+    expect(second.success).toBe(true);
+    expect(seller.credited).toEqual([TX_HASH]);
+    expect(mockBuildAndSign).not.toHaveBeenCalled();
+  });
+});
